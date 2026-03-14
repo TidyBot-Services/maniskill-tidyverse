@@ -179,13 +179,22 @@ class TidyVerse(BaseAgent):
             mimic=mimic_config,
         )
 
-        # ---- Base controller ----
+        # ---- Base controllers ----
         base_pd_joint_vel = PDJointVelControllerConfig(
             self.base_joint_names,
             lower=-1.0,
             upper=1.0,
             damping=self.base_damping,
             force_limit=self.base_force_limit,
+        )
+        base_pd_joint_pos = PDJointPosControllerConfig(
+            self.base_joint_names,
+            lower=None,
+            upper=None,
+            stiffness=self.base_stiffness,
+            damping=self.base_damping,
+            force_limit=self.base_force_limit,
+            normalize_action=False,
         )
 
         controller_configs = dict(
@@ -200,6 +209,13 @@ class TidyVerse(BaseAgent):
                 gripper_active=gripper_pd_joint_pos,
                 gripper_passive=passive_finger_joints,
                 base=base_pd_joint_vel,
+            ),
+            # Whole-body position control: arm + base both position-controlled
+            whole_body=dict(
+                arm=arm_pd_joint_pos,
+                gripper_active=gripper_pd_joint_pos,
+                gripper_passive=passive_finger_joints,
+                base=base_pd_joint_pos,
             ),
             pd_ee_delta_pose=dict(
                 arm=arm_pd_ee_delta_pose,

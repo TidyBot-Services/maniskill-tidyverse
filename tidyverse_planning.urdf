@@ -337,7 +337,7 @@
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_outer_knuckle.dae" scale="0.001 0.001 0.001"/>
+        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_outer_knuckle.dae.convex.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
   </link>
@@ -359,7 +359,7 @@
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_outer_finger.dae" scale="0.001 0.001 0.001"/>
+        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_outer_finger.dae.convex.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
   </link>
@@ -381,7 +381,7 @@
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_inner_finger.dae" scale="0.001 0.001 0.001"/>
+        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_inner_finger.dae.convex.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
   </link>
@@ -420,7 +420,7 @@
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_inner_knuckle.dae" scale="0.001 0.001 0.001"/>
+        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_inner_knuckle.dae.convex.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
   </link>
@@ -442,7 +442,7 @@
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_outer_knuckle.dae" scale="0.001 0.001 0.001"/>
+        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_outer_knuckle.dae.convex.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
   </link>
@@ -464,7 +464,7 @@
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_outer_finger.dae" scale="0.001 0.001 0.001"/>
+        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_outer_finger.dae.convex.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
   </link>
@@ -486,7 +486,7 @@
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_inner_finger.dae" scale="0.001 0.001 0.001"/>
+        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_inner_finger.dae.convex.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
   </link>
@@ -525,7 +525,7 @@
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_inner_knuckle.dae" scale="0.001 0.001 0.001"/>
+        <mesh filename="robotiq_meshes/collision/robotiq_arg2f_85_inner_knuckle.dae.convex.stl" scale="0.001 0.001 0.001"/>
       </geometry>
     </collision>
   </link>
