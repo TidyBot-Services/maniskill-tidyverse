@@ -13,6 +13,9 @@ TidyVerse robot agent for [ManiSkill3](https://github.com/haosulab/ManiSkill) â€
 ## Install
 
 ```bash
+# Recommended: use a conda environment
+conda create -n maniskill python=3.11 -y
+conda activate maniskill
 pip install mani_skill==3.0.0b22 mplib==0.2.1 pycollada
 ```
 
@@ -29,6 +32,20 @@ ln -sf ~/.maniskill/data/robots/robotiq_2f/meshes robotiq_meshes
 
 ## Quick Start
 
+### Run the demo script
+
+```bash
+# Set DISPLAY if running on a headless machine with Xvfb/VNC
+export DISPLAY=:1  # adjust as needed
+
+# Using conda env
+conda activate maniskill
+cd maniskill-tidyverse
+python demo_pickcube.py
+```
+
+### Or use from Python
+
 ```python
 import sys
 sys.path.insert(0, '/path/to/maniskill-tidyverse')
@@ -43,6 +60,8 @@ obs, info = env.reset(seed=0)
 ```
 
 Works with any ManiSkill3 environment (`PickCube-v1`, `RoboCasaKitchen-v1`, etc.).
+
+> **Note:** The warning `"tidyverse is not in the task's list of supported robots"` is expected and safe to ignore.
 
 ## Control Modes
 
