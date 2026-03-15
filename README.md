@@ -307,6 +307,46 @@ The Robotiq 85 gripper joint range is `[0, 0.81]` rad in `whole_body` mode (`nor
 
 Base uses critically damped PD control (Kp=1000, Kd=520) for fast settling without oscillation.
 
+## RoboCasa Kitchen Grasp Test
+
+`test_robocasa_grasp.py` — places a cube on every available surface in a RoboCasa kitchen, then attempts to pick each one up using the IK-seeded grasp pipeline.
+
+```bash
+# GUI mode
+python test_robocasa_grasp.py --render human --seed 0
+
+# Record video (saved to videos/)
+python test_robocasa_grasp.py --render rgb_array --seed 0
+
+# Limit to N nearest cubes
+python test_robocasa_grasp.py --render rgb_array --seed 0 --max-cubes 5
+```
+
+### Placement surfaces
+
+The script enumerates all fixtures and finds placement locations on:
+- **Counters** — every top geom region
+- **Stoves/Stovetops** — each burner site
+- **Cabinets** (Single/Hinge/Open) — interior bottom shelf + top surface
+- **Drawers** — interior (if at reachable height)
+- **Microwaves** — interior chamber
+- **Coffee machines** — receptacle site
+- **Sinks** — basin interior
+
+Typically finds 40+ placement locations per kitchen layout.
+
+### Grasp strategy
+
+- **Open surfaces** (counters, stove, sink): Top-Down → Angled 45° → Front
+- **Enclosed spaces** (cabinet/drawer/microwave interiors): Front → Angled 45°
+- Cubes are sorted by distance from the arm base; nearest attempted first
+- Arm-only planning first, whole-body fallback if out of reach
+- Timeout guards (`signal.alarm`) prevent infinite planning hangs
+
+### Collision handling caveat
+
+The ACM (Allowed Collision Matrix) is relaxed for **all** kitchen fixtures and static geometry so the planner can find paths in the cluttered kitchen. This means the robot will plan paths that may pass through counters, cabinets, and walls. Only collisions with the spawned cubes are checked. Proper collision avoidance against furniture requires either selective ACM relaxation per fixture or adding kitchen geometry as planning obstacles, which is not yet implemented.
+
 ## Known Limitations
 
 - `RoboCasaKitchen-v1` is a scene viewer — no task definitions or `_check_success()`
@@ -319,6 +359,7 @@ Base uses critically damped PD control (Kp=1000, Kd=520) for fast settling witho
 
 ```
 maniskill-tidyverse/
+├── test_robocasa_grasp.py           # Kitchen grasp test (place cubes on all surfaces, pick them up)
 ├── test_table_grasp.py              # Table-top grasp test (3 strategies, video recording)
 ├── tidyverse_agent.py              # Agent class, registered as 'tidyverse'
 ├── tidyverse.urdf                   # Full URDF (for ManiSkill rendering)
