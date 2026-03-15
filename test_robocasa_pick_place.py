@@ -132,9 +132,10 @@ SapienPlanningWorld.convert_physx_component = _convert_physx_component
 # ─── Video writer ─────────────────────────────────────────────────────────────
 
 class VideoWriter:
-    def __init__(self, path, fps=30):
+    def __init__(self, path, fps=30, max_width=512):
         self.path = path
         self.fps = fps
+        self.max_width = max_width
         self.writer = None
         self.frame_count = 0
 
@@ -142,6 +143,10 @@ class VideoWriter:
         if frame.ndim == 4:
             frame = frame[0]
         h, w = frame.shape[:2]
+        if w > self.max_width:
+            scale = self.max_width / w
+            frame = cv2.resize(frame, (self.max_width, int(h * scale)))
+            h, w = frame.shape[:2]
         if self.writer is None:
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             self.writer = cv2.VideoWriter(self.path, fourcc, self.fps, (w, h))
@@ -533,32 +538,66 @@ def build_kitchen_acm(pw, planner, cube_names, mode='relaxed',
 
 # ─── Grasp strategy ──────────────────────────────────────────────────────────
 
-def build_grasp_poses(obj_pos, arm_base):
-    """Grasp poses ordered by preference: Angled45 first."""
-    yaw = np.arctan2(obj_pos[1] - arm_base[1], obj_pos[0] - arm_base[0])
+def build_object_grasps(obj_pos, arm_base):
+    """Grasp poses for free objects (blocks, cups, etc.): Angled45 + Top-Down.
+
+    For each strategy, generates 4 yaw rotations (0°, 90°, 180°, 270°)
+    since symmetric objects can be grasped from any direction.
+    """
+    base_yaw = np.arctan2(obj_pos[1] - arm_base[1], obj_pos[0] - arm_base[0])
+    grasps = []
+    for i, yaw_offset in enumerate([0, np.pi / 2, np.pi, -np.pi / 2]):
+        yaw = base_yaw + yaw_offset
+        cos_y, sin_y = np.cos(yaw), np.sin(yaw)
+        deg = int(np.degrees(yaw_offset))
+        grasps.append((
+            f'Angled45-{deg}',
+            obj_pos + np.array([-0.02 * cos_y, -0.02 * sin_y, 0.02]),
+            np.array(euler2quat(0, 3 * np.pi / 4, yaw)),
+        ))
+    for i, yaw_offset in enumerate([0, np.pi / 2, np.pi, -np.pi / 2]):
+        yaw = base_yaw + yaw_offset
+        deg = int(np.degrees(yaw_offset))
+        grasps.append((
+            f'Top-Down-{deg}',
+            obj_pos.copy(),
+            np.array(euler2quat(0, np.pi, yaw)),
+        ))
+    return grasps
+
+
+def build_handle_grasps(handle_pos, arm_base):
+    """Grasp poses for handles: Front + Front-Vertical (rotated 90 deg)."""
+    yaw = np.arctan2(handle_pos[1] - arm_base[1],
+                     handle_pos[0] - arm_base[0])
     cos_y, sin_y = np.cos(yaw), np.sin(yaw)
     front_rot = R.from_euler('yz', [np.pi / 2, yaw])
+    front_vert_rot = front_rot * R.from_euler('z', np.pi / 2)
     return [
-        ('Angled45',
-         obj_pos + np.array([-0.02 * cos_y, -0.02 * sin_y, 0.02]),
-         np.array(euler2quat(0, 3 * np.pi / 4, yaw))),
-        ('Top-Down',
-         obj_pos.copy(),
-         np.array([0, 1, 0, 0])),
         ('Front',
-         obj_pos + np.array([-0.06 * cos_y, -0.06 * sin_y, 0.08]),
+         handle_pos + np.array([-0.06 * cos_y, -0.06 * sin_y, 0.08]),
          np.array(front_rot.as_quat()[[3, 0, 1, 2]])),
+        ('Front-Vertical',
+         handle_pos + np.array([-0.06 * cos_y, -0.06 * sin_y, 0.08]),
+         np.array(front_vert_rot.as_quat()[[3, 0, 1, 2]])),
     ]
 
 
-def select_strategies(ftype, label):
+def select_grasps(obj_pos, arm_base, ftype, label):
+    """Select ordered grasp list based on object/fixture type."""
+    is_handle = 'handle' in label.lower()
+    if is_handle:
+        return build_handle_grasps(obj_pos, arm_base)
+    # All non-handle objects: Angled45 preferred, then Top-Down
+    grasps = build_object_grasps(obj_pos, arm_base)
     is_enclosed = 'interior' in label
     if is_enclosed:
-        return ['Front', 'Angled45']
+        # Inside a fixture — reverse order to try Top-Down first
+        return list(reversed(grasps))
     elif ftype in ('Stove', 'Stovetop'):
-        return ['Top-Down', 'Angled45']
-    else:
-        return ['Angled45', 'Top-Down', 'Front']
+        return [g for g in grasps if g[0] == 'Top-Down'] + \
+               [g for g in grasps if g[0] != 'Top-Down']
+    return grasps
 
 
 def build_place_pose(dest_pos, arm_base):
@@ -612,11 +651,7 @@ def attempt_pick_place(task_idx, cube_pos, src_label, src_ftype,
         return make_action(q[3:10], GRIPPER_CLOSED, q[:3])
 
     # --- Try grasp strategies ---
-    strategies = select_strategies(src_ftype, src_label)
-    all_grasps = build_grasp_poses(cube_pos, arm_base)
-    ordered = [g for s in strategies for g in all_grasps if g[0] == s]
-    if not ordered:
-        ordered = all_grasps
+    ordered = select_grasps(cube_pos, arm_base, src_ftype, src_label)
 
     grasped = False
     used_arm_only = False
@@ -832,6 +867,9 @@ def main():
                         choices=['human', 'rgb_array'])
     parser.add_argument('--max-tasks', type=int, default=None,
                         help='Limit to N nearest tasks')
+    parser.add_argument('--dest-label', type=str, default=None,
+                        help='Substring match for fixed destination '
+                             '(default: nearest placement)')
     parser.add_argument('--acm', default='strict',
                         choices=['relaxed', 'strict'])
     parser.add_argument('--viz-dir', type=str, default=None,
@@ -931,16 +969,25 @@ def main():
         reachable.append((label, cube_pos, ftype, fix_obj, dist))
     reachable.sort(key=lambda x: x[4])
 
-    # Build task pairs: each source gets a random destination
+    # Build task list: pick a single fixed destination, all blocks go there
     rng = np.random.RandomState(args.seed)
+    # Choose destination: use --dest-label if given, else nearest placement
+    dest_entry = None
+    if args.dest_label:
+        dest_entry = next((r for r in reachable
+                           if args.dest_label.lower() in r[0].lower()), None)
+        if dest_entry is None:
+            print(f"WARNING: --dest-label '{args.dest_label}' not found, "
+                  f"using nearest placement")
+    if dest_entry is None:
+        dest_entry = reachable[0]
+    d_label, d_pos, d_ftype, d_fix, d_dist = dest_entry
+    print(f"\nDestination: {d_label} ({d_ftype}) dist={d_dist:.2f}m")
+
     tasks = []
     for i, (s_label, s_pos, s_ftype, s_fix, s_dist) in enumerate(reachable):
-        candidates = [(j, r) for j, r in enumerate(reachable)
-                      if j != i and r[0] != s_label]
-        if not candidates:
-            continue
-        j, (d_label, d_pos, d_ftype, d_fix, d_dist) = candidates[
-            rng.randint(len(candidates))]
+        if s_label == d_label:
+            continue  # don't pick from destination
         tasks.append({
             'src_label': s_label, 'src_pos': s_pos, 'src_ftype': s_ftype,
             'src_fix': s_fix, 'src_dist': s_dist,
