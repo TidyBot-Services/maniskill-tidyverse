@@ -344,7 +344,7 @@ def build_grasp_poses(block_pos, arm_base):
     yaw = np.arctan2(block_pos[1] - arm_base[1], block_pos[0] - arm_base[0])
     cos_y, sin_y = np.cos(yaw), np.sin(yaw)
     front_rot = R.from_euler('yz', [np.pi / 2, yaw])
-    front_vert_rot = front_rot * R.from_euler('z', [np.pi / 2])
+    front_vert_rot = front_rot * R.from_euler('z', np.pi / 2)
     return [
         ('Top-Down',
          block_pos + [0, 0, 0],
