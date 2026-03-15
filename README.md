@@ -256,7 +256,14 @@ obs, info = env.reset(seed=42)
 
 ## Table Grasp Test
 
-`test_table_grasp.py` — end-to-end pick test with a table and a small red block. The robot plans pre-grasp, approach, close gripper, and lift for three grasp strategies (top-down, front, angled 45°).
+`test_table_grasp.py` — end-to-end pick test with a table and a small red block. The robot plans pre-grasp, approach, close gripper, and lift for four grasp strategies:
+
+| Strategy | Best For | Description |
+|----------|----------|-------------|
+| **Top-down** | Objects on surfaces | Gripper straight down |
+| **Front** | Vertical handles (e.g. cabinet doors) | Gripper horizontal, pointing forward. Not ideal for objects sitting on a surface — the table blocks the approach. |
+| **Front-Vertical** | Horizontal handles (e.g. drawer pulls) | Same as Front but fingers rotated 90° so they're vertical, wrapping around a horizontal bar |
+| **Angled 45°** | General purpose | 45° between down and forward |
 
 ```bash
 # GUI mode
