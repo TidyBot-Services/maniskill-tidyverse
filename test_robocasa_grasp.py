@@ -38,6 +38,7 @@ from sapien.physx import (
 from transforms3d.euler import euler2mat, euler2quat
 from scipy.spatial.transform import Rotation as R
 import mplib.sapien_utils.conversion as _conv
+from viz_planning_world import save_planning_world
 # Video writer helper
 class VideoWriter:
     """Accumulate frames and write mp4 on close."""
@@ -61,6 +62,112 @@ class VideoWriter:
         if self.writer:
             self.writer.release()
             print(f"Video saved: {self.path} ({self.frame_count} frames)")
+
+# ─── Collision logger ──────────────────────────────────────────────────────────
+
+class CollisionLogger:
+    """Detect and log physics collisions (from SAPIEN PhysX contacts).
+
+    Logs each unique collision pair once to terminal, and saves a snapshot image.
+    Clears image directory on each run. Filenames include step number for
+    cross-referencing with terminal logs.
+    """
+    def __init__(self, robot, scene, env, img_dir, render_mode='human'):
+        self.robot = robot
+        self.scene = scene
+        self.env = env
+        self.img_dir = img_dir
+        self.render_mode = render_mode
+        # Clear previous collision images
+        import shutil
+        if os.path.exists(img_dir):
+            shutil.rmtree(img_dir)
+        os.makedirs(img_dir, exist_ok=True)
+        # Collect robot link entity names for filtering
+        self.robot_entity_names = set()
+        for link in robot.get_links():
+            self.robot_entity_names.add(link.get_name())
+        # Track seen collision pairs (frozenset of (name0, name1))
+        self.seen_pairs = set()
+        self.collision_count = 0
+        self.step_count = 0
+
+    def check(self, step_label=""):
+        """Call after each env.step() to check for new collisions."""
+        self.step_count += 1
+        try:
+            contacts = self.scene.get_contacts()
+        except Exception:
+            return
+        for contact in contacts:
+            if not contact.points:
+                continue
+            # Check if any impulse is significant
+            impulse = np.sum([pt.impulse for pt in contact.points], axis=0)
+            if np.linalg.norm(impulse) < 1e-4:
+                continue
+            b0 = contact.bodies[0]
+            b1 = contact.bodies[1]
+            name0 = b0.entity.name if b0.entity else str(b0)
+            name1 = b1.entity.name if b1.entity else str(b1)
+            # Only care about collisions involving a robot link
+            is_robot0 = name0 in self.robot_entity_names
+            is_robot1 = name1 in self.robot_entity_names
+            if not (is_robot0 or is_robot1):
+                continue
+            # Skip robot self-collisions
+            if is_robot0 and is_robot1:
+                continue
+            pair = frozenset((name0, name1))
+            if pair not in self.seen_pairs:
+                self.seen_pairs.add(pair)
+                self.collision_count += 1
+                robot_part = name0 if is_robot0 else name1
+                other_part = name1 if is_robot0 else name0
+                sep = min(pt.separation for pt in contact.points)
+                imp_mag = np.linalg.norm(impulse)
+                print(f"  ⚠ COLLISION #{self.collision_count} step={self.step_count}: "
+                      f"{robot_part} <-> {other_part}  "
+                      f"impulse={imp_mag:.4f}  sep={sep:.4f}  "
+                      f"[{step_label}]")
+                self._save_image(robot_part, other_part)
+
+    def _save_image(self, robot_part, other_part):
+        """Save a snapshot of the scene when collision is detected."""
+        try:
+            frame = self.env.render()
+            if isinstance(frame, torch.Tensor):
+                frame = frame.cpu().numpy()
+            if frame.ndim == 4:
+                frame = frame[0]
+            img = frame.astype(np.uint8)
+            # Add collision label
+            text = f"COLLISION #{self.collision_count} step={self.step_count}: {robot_part} <-> {other_part}"
+            h = img.shape[0]
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            scale = max(0.4, h / 800)
+            thick = max(1, int(h / 400))
+            (tw, th_), _ = cv2.getTextSize(text, font, scale, thick)
+            cv2.rectangle(img, (5, 5), (tw + 15, th_ + 15), (0, 0, 200), -1)
+            cv2.putText(img, text, (10, th_ + 10), font, scale,
+                        (255, 255, 255), thick, cv2.LINE_AA)
+            safe_name = (f"collision_{self.collision_count:03d}"
+                         f"_step{self.step_count:05d}"
+                         f"_{robot_part}_vs_{other_part}.png")
+            safe_name = safe_name.replace('/', '_')
+            path = os.path.join(self.img_dir, safe_name)
+            cv2.imwrite(path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+            print(f"    Saved: {path}")
+        except Exception as e:
+            print(f"    (image save failed: {e})")
+
+    def summary(self):
+        print(f"\nCollision summary: {self.collision_count} unique collision pairs "
+              f"detected over {self.step_count} steps")
+        for pair in sorted(self.seen_pairs, key=lambda p: sorted(p)):
+            names = sorted(pair)
+            print(f"  - {names[0]} <-> {names[1]}")
+
 
 from mani_skill.utils.scene_builder.robocasa.fixtures.counter import Counter
 from mani_skill.utils.scene_builder.robocasa.fixtures.stove import Stove, Stovetop
@@ -389,32 +496,140 @@ def check_joint_limits(qpos, joint_limits, joint_names, label=""):
 
 # ─── ACM builder ─────────────────────────────────────────────────────────────
 
-def build_kitchen_acm(pw, planner, cube_names):
-    """Relax collisions with kitchen fixtures but keep cube collisions active."""
+def _get_object_position(pw, name):
+    """Get the world position of a planning-world object."""
+    try:
+        return np.array(pw.get_object(name).pose.p)
+    except Exception:
+        return None
+
+
+def build_kitchen_acm(pw, planner, cube_names, mode='relaxed',
+                      robot_pos=None, near_radius=1.5):
+    """Configure ACM for collision checking.
+
+    mode='relaxed': relax ALL fixture collisions (planner ignores furniture).
+    mode='strict':  only relax fixtures far from robot (>near_radius);
+                    nearby fixtures are collision-checked by the planner.
+    """
     acm = pw.get_allowed_collision_matrix()
     art_names = pw.get_articulation_names()
     robot_link_names = planner.pinocchio_model.get_link_names()
     robot_art = next(n for n in art_names if 'tidyverse' in n.lower())
 
-    # Robot vs all non-robot articulations (fixture doors, drawers, etc.)
+    # --- Log what the planner sees ---
+    print(f"\n  Planning world contents (ACM mode={mode}):")
+    print(f"    Robot links ({len(robot_link_names)}): {robot_link_names[:5]}...")
+    print(f"    Articulations ({len(art_names)}):")
+
+    relaxed_arts, checked_arts = [], []
     for an in art_names:
         if an == robot_art:
+            print(f"      [ROBOT] {an}")
             continue
         fl = pw.get_articulation(an).get_pinocchio_model().get_link_names()
-        for rl in robot_link_names:
-            for f in fl:
-                acm.set_entry(rl, f, True)
+        # Estimate fixture position from its first link
+        art_obj = pw.get_articulation(an)
+        link_names = art_obj.get_pinocchio_model().get_link_names()
+        art_pos = None
+        if link_names:
+            try:
+                art_pos = np.array(art_obj.get_pinocchio_model()
+                                   .get_random_configuration()[:3])
+            except Exception:
+                pass
+        # In strict mode, check if fixture is near the robot
+        should_relax = True
+        if mode == 'strict' and robot_pos is not None and art_pos is not None:
+            # Use a rough heuristic: get pose from the FCL objects
+            pass  # We'll use object positions below instead
 
-    # Robot vs static objects — but NOT the cubes we want to grasp
-    for on in pw.get_object_names():
+        if mode == 'relaxed':
+            relaxed_arts.append(an)
+            print(f"      [RELAXED] {an} ({len(fl)} links)")
+        else:
+            # For strict: we'll decide per-fixture below after checking positions
+            checked_arts.append((an, fl))
+            print(f"      [PENDING] {an} ({len(fl)} links)")
+
+    obj_names = pw.get_object_names()
+    checked_objs = [n for n in obj_names if n in cube_names]
+
+    # Classify static objects
+    relaxed_static, checked_static = [], []
+    for on in obj_names:
         if on in cube_names:
             continue
-        for rl in robot_link_names:
-            acm.set_entry(rl, on, True)
+        if mode == 'relaxed':
+            relaxed_static.append(on)
+        else:
+            pos = _get_object_position(pw, on)
+            if pos is not None and robot_pos is not None:
+                dist = np.linalg.norm(pos[:2] - robot_pos[:2])
+                if dist > near_radius:
+                    relaxed_static.append(on)
+                else:
+                    checked_static.append((on, dist))
+            else:
+                # Can't determine distance — keep it checked for safety
+                checked_static.append((on, -1))
 
-    print(f"  ACM: relaxed {len(art_names)-1} fixture articulations + "
-          f"{len(pw.get_object_names()) - len(cube_names)} static objects, "
-          f"checking {len(cube_names)} cubes")
+    print(f"    Static objects ({len(obj_names)} total):")
+    print(f"      Cubes (always checked): {len(checked_objs)}")
+    if mode == 'relaxed':
+        print(f"      ACM-relaxed: {len(relaxed_static)}")
+    else:
+        print(f"      Collision-checked (near, <{near_radius}m): {len(checked_static)}")
+        for on, d in sorted(checked_static, key=lambda x: x[1]):
+            print(f"        - {on}  dist={d:.2f}m")
+        print(f"      ACM-relaxed (far): {len(relaxed_static)}")
+
+    # --- Apply ACM ---
+    if mode == 'relaxed':
+        # Relax ALL fixture articulations
+        for an in art_names:
+            if an == robot_art:
+                continue
+            fl = pw.get_articulation(an).get_pinocchio_model().get_link_names()
+            for rl in robot_link_names:
+                for f in fl:
+                    acm.set_entry(rl, f, True)
+        # Relax ALL non-cube static objects
+        for on in relaxed_static:
+            for rl in robot_link_names:
+                acm.set_entry(rl, on, True)
+    else:
+        # Strict: relax fixture articulations (too many false collisions
+        # from articulated fixture meshes), but keep nearby static objects
+        # as collision obstacles for the planner.
+        for an in art_names:
+            if an == robot_art:
+                continue
+            fl = pw.get_articulation(an).get_pinocchio_model().get_link_names()
+            for rl in robot_link_names:
+                for f in fl:
+                    acm.set_entry(rl, f, True)
+        # Only relax FAR static objects
+        for on in relaxed_static:
+            for rl in robot_link_names:
+                acm.set_entry(rl, on, True)
+        # Nearby static objects are NOT relaxed — planner will avoid them
+
+    # Check initial collisions
+    sync_planner(planner)
+    collisions = pw.check_collision()
+    if collisions:
+        print(f"\n  Initial planner collisions ({len(collisions)}):")
+        for c in collisions:
+            print(f"    {c.link_name1}({c.object_name1}) <-> "
+                  f"{c.link_name2}({c.object_name2})")
+    else:
+        print(f"\n  No initial planner collisions")
+
+    n_relaxed_art = len(art_names) - 1 if mode == 'relaxed' else len(art_names) - 1
+    print(f"\n  ACM summary: {n_relaxed_art} fixture articulations relaxed, "
+          f"{len(relaxed_static)} static objects relaxed, "
+          f"{len(checked_objs) + len(checked_static)} objects collision-checked")
 
 
 # ─── Grasp strategy ──────────────────────────────────────────────────────────
@@ -453,7 +668,8 @@ def select_strategies(ftype, label):
 # ─── Single grasp attempt ────────────────────────────────────────────────────
 
 def attempt_grasp(cube_idx, cube_name, cube_pos, label, ftype,
-                  robot, planner, pw, step_fn, env, total):
+                  robot, planner, pw, step_fn, env, total, timings,
+                  viz_dir=None, step_label=None):
     """Full pick cycle for one cube. Returns outcome string."""
     arm_base = next(l for l in robot.get_links()
                     if l.get_name() == 'panda_link0').pose.p[0].cpu().numpy()
@@ -463,8 +679,21 @@ def attempt_grasp(cube_idx, cube_name, cube_pos, label, ftype,
     if not ordered:
         ordered = all_grasps
 
+    def _snap(stage_name, gname_s=""):
+        if viz_dir:
+            sync_planner(planner)
+            slug = label.lower().replace(' ', '_').replace('/', '_')[:40]
+            g_slug = gname_s.lower().replace('-', '_').replace(' ', '_')
+            save_planning_world(
+                pw, os.path.join(viz_dir, f"{cube_idx}_{slug}_{g_slug}_{stage_name}"))
+
+    def _set_label(phase):
+        if step_label is not None:
+            step_label[0] = f"[{cube_idx+1}/{total}] {label} | {phase}"
+
     for gname, target_p, target_q in ordered:
         tag = f"[{cube_idx+1}/{total}] {label} ({gname})"
+        _set_label(f"IK ({gname})")
         print(f"\n  --- {tag} ---")
         target_q_arr = np.array(target_q)
 
@@ -484,66 +713,86 @@ def attempt_grasp(cube_idx, cube_name, cube_pos, label, ftype,
         grasp_mask = None
         for mask_name, mask in [("arm-only", MASK_ARM_ONLY),
                                 ("whole-body", MASK_WHOLE_BODY)]:
+            t0 = time.time()
             signal.alarm(IK_TIMEOUT)
             try:
                 status, solutions = planner.IK(
                     approach_base, cq, mask=mask, n_init_qpos=40,
                     return_closest=True)
             except TimeoutError:
-                print(f"    IK ({mask_name}): TIMEOUT")
+                dt = time.time() - t0
+                print(f"    IK ({mask_name}): TIMEOUT  [{dt:.2f}s]")
+                timings['ik'] += dt
                 continue
             finally:
                 signal.alarm(0)
+            dt = time.time() - t0
+            timings['ik'] += dt
             if solutions is not None:
                 q_grasp = solutions
                 grasp_mask = mask
-                print(f"    Grasp IK ({mask_name}): OK")
+                print(f"    Grasp IK ({mask_name}): OK  [{dt:.2f}s]")
                 break
+            else:
+                print(f"    Grasp IK ({mask_name}): no solution  [{dt:.2f}s]")
 
         if q_grasp is None:
             print(f"    Grasp IK: FAILED for {gname} — trying next strategy")
             continue
 
         # 2. Solve pre-grasp IK seeded from grasp solution
+        t0 = time.time()
         signal.alarm(IK_TIMEOUT)
         try:
             _, pregrasp_sols = planner.IK(
                 pre_base, q_grasp, mask=grasp_mask, n_init_qpos=40,
                 return_closest=True)
         except TimeoutError:
-            print(f"    Pre-grasp IK: TIMEOUT")
+            dt = time.time() - t0
+            print(f"    Pre-grasp IK: TIMEOUT  [{dt:.2f}s]")
+            timings['ik'] += dt
             continue
         finally:
             signal.alarm(0)
+        dt = time.time() - t0
+        timings['ik'] += dt
         if pregrasp_sols is None:
-            print(f"    Pre-grasp IK: FAILED")
+            print(f"    Pre-grasp IK: FAILED  [{dt:.2f}s]")
             continue
-        print(f"    Pre-grasp IK: OK")
+        print(f"    Pre-grasp IK: OK  [{dt:.2f}s]")
 
         # 3. Plan path: current → pre-grasp
         sync_planner(planner)
         cq = get_robot_qpos(robot)
+        t0 = time.time()
         signal.alarm(PLANNING_TIMEOUT)
         try:
             result = planner.plan_qpos([pregrasp_sols], cq, planning_time=5.0)
         except TimeoutError:
-            print(f"    Pre-grasp path: TIMEOUT")
+            dt = time.time() - t0
+            print(f"    Pre-grasp path: TIMEOUT  [{dt:.2f}s]")
+            timings['planning'] += dt
             continue
         finally:
             signal.alarm(0)
+        dt = time.time() - t0
+        timings['planning'] += dt
 
         if result['status'] != 'Success':
-            print(f"    Pre-grasp path: FAILED — {result['status']}")
+            print(f"    Pre-grasp path: FAILED — {result['status']}  [{dt:.2f}s]")
             continue
-        print(f"    Pre-grasp path: OK ({result['position'].shape[0]} waypoints)")
+        print(f"    Pre-grasp path: OK ({result['position'].shape[0]} wp)  [{dt:.2f}s]")
 
         used_arm_only = bool(isinstance(grasp_mask, np.ndarray) and grasp_mask[0])
         motion_mask = MASK_ARM_ONLY if used_arm_only else MASK_WHOLE_BODY
 
         # Execute pre-grasp
+        _set_label(f"Pre-grasp ({gname})")
+        t0 = time.time()
         execute_trajectory(result['position'], step_fn, GRIPPER_OPEN,
                            lock_base=used_arm_only, env=env,
                            label="Pre-grasp", robot=robot)
+        timings['exec'] += time.time() - t0
 
         def hold_open():
             q = get_robot_qpos(robot)
@@ -553,74 +802,110 @@ def attempt_grasp(cube_idx, cube_name, cube_pos, label, ftype,
             q = get_robot_qpos(robot)
             return make_action(q[3:10], GRIPPER_CLOSED, q[:3])
 
+        t0 = time.time()
         pause_with_label(env, step_fn, hold_open(), f"{tag} - Pre-grasp")
+        timings['pause'] += time.time() - t0
+        _snap("1_pregrasp", gname)
 
         # 4. Approach
+        _set_label(f"Approach ({gname})")
         sync_planner(planner)
         cq = get_robot_qpos(robot)
+        t0 = time.time()
         signal.alarm(PLANNING_TIMEOUT)
         try:
             r_app = planner.plan_pose(approach_pose, cq, mask=motion_mask,
                                        planning_time=5.0)
         except TimeoutError:
-            print(f"    Approach: TIMEOUT")
+            dt = time.time() - t0
+            print(f"    Approach: TIMEOUT  [{dt:.2f}s]")
+            timings['planning'] += dt
             continue
         finally:
             signal.alarm(0)
+        dt = time.time() - t0
+        timings['planning'] += dt
 
         if r_app['status'] != 'Success':
-            print(f"    Approach: FAILED — {r_app['status']}")
+            print(f"    Approach: FAILED — {r_app['status']}  [{dt:.2f}s]")
             continue
-        print(f"    Approach: OK ({r_app['position'].shape[0]} waypoints)")
+        print(f"    Approach: OK ({r_app['position'].shape[0]} wp)  [{dt:.2f}s]")
+
+        t0 = time.time()
         execute_trajectory(r_app['position'], step_fn, GRIPPER_OPEN,
                            lock_base=used_arm_only, env=env,
                            label="Approach", robot=robot)
+        timings['exec'] += time.time() - t0
+
+        t0 = time.time()
         pause_with_label(env, step_fn, hold_open(), f"{tag} - Approach")
+        timings['pause'] += time.time() - t0
+        _snap("2_approach", gname)
 
         # 5. Close gripper
+        _set_label(f"Grasping ({gname})")
+        t0 = time.time()
         actuate_gripper(step_fn, env, robot, GRIPPER_CLOSED,
                         f"{tag} - Closing")
         pause_with_label(env, step_fn, hold_closed(), f"{tag} - Grasped")
+        timings['gripper'] += time.time() - t0
+        _snap("3_grasped", gname)
 
         # 6. Lift
+        _set_label(f"Lifting ({gname})")
         lift_pose = MPPose(p=np.array(target_p) + [0, 0, LIFT_HEIGHT],
                            q=target_q_arr)
         sync_planner(planner)
         cq = get_robot_qpos(robot)
+        t0 = time.time()
         signal.alarm(PLANNING_TIMEOUT)
         try:
             r_lift = planner.plan_pose(lift_pose, cq, mask=motion_mask,
                                         planning_time=5.0)
         except TimeoutError:
-            print(f"    Lift: TIMEOUT")
+            dt = time.time() - t0
+            print(f"    Lift: TIMEOUT  [{dt:.2f}s]")
+            timings['planning'] += dt
             # still got grasp — partial success
             actuate_gripper(step_fn, env, robot, GRIPPER_OPEN,
                             f"{tag} - Drop (lift failed)")
             return 'partial'
         finally:
             signal.alarm(0)
+        dt = time.time() - t0
+        timings['planning'] += dt
 
         if r_lift['status'] == 'Success':
-            print(f"    Lift: OK ({r_lift['position'].shape[0]} waypoints)")
+            print(f"    Lift: OK ({r_lift['position'].shape[0]} wp)  [{dt:.2f}s]")
+            t0 = time.time()
             execute_trajectory(r_lift['position'], step_fn, GRIPPER_CLOSED,
                                lock_base=used_arm_only, env=env,
                                label="Lift", robot=robot)
+            timings['exec'] += time.time() - t0
+            t0 = time.time()
             pause_with_label(env, step_fn, hold_closed(), f"{tag} - Lifted")
+            timings['pause'] += time.time() - t0
+            _snap("4_lifted", gname)
         else:
-            print(f"    Lift: FAILED — {r_lift['status']}")
+            print(f"    Lift: FAILED — {r_lift['status']}  [{dt:.2f}s]")
 
         # 7. Drop
+        _set_label(f"Dropping ({gname})")
+        t0 = time.time()
         actuate_gripper(step_fn, env, robot, GRIPPER_OPEN,
                         f"{tag} - Dropping")
         for _ in range(30):
             step_fn(hold_open())
+        timings['gripper'] += time.time() - t0
 
         # 8. Return to home
+        _set_label(f"Return home ({gname})")
         sync_planner(planner)
         cq = get_robot_qpos(robot)
         home_qpos = cq.copy()
         home_qpos[3:10] = ARM_HOME
         home_qpos[10:] = 0.0
+        t0 = time.time()
         signal.alarm(PLANNING_TIMEOUT)
         try:
             r_home = planner.plan_qpos([home_qpos], cq, planning_time=5.0)
@@ -628,20 +913,26 @@ def attempt_grasp(cube_idx, cube_name, cube_pos, label, ftype,
             r_home = {'status': 'TIMEOUT'}
         finally:
             signal.alarm(0)
+        dt = time.time() - t0
+        timings['planning'] += dt
 
         if r_home['status'] == 'Success':
-            print(f"    Return: OK ({r_home['position'].shape[0]} waypoints)")
+            print(f"    Return: OK ({r_home['position'].shape[0]} wp)  [{dt:.2f}s]")
+            t0 = time.time()
             execute_trajectory(r_home['position'], step_fn, GRIPPER_OPEN,
                                env=env, label=f"{tag} - Return", robot=robot)
+            timings['exec'] += time.time() - t0
         else:
-            print(f"    Return: FAILED, teleporting to home")
+            print(f"    Return: FAILED, teleporting to home  [{dt:.2f}s]")
             robot.set_qpos(torch.tensor(
                 home_qpos, dtype=torch.float32).unsqueeze(0))
 
+        t0 = time.time()
         wait_until_stable(step_fn,
                           make_action(ARM_HOME, GRIPPER_OPEN,
                                       get_robot_qpos(robot)[:3]),
                           robot, max_steps=100)
+        timings['settle'] += time.time() - t0
         return 'success'
 
     return 'unreachable'
@@ -656,26 +947,71 @@ def main():
                         choices=['human', 'rgb_array'])
     parser.add_argument('--max-cubes', type=int, default=None,
                         help='Limit to N nearest cubes (default: all)')
+    parser.add_argument('--acm', default='relaxed',
+                        choices=['relaxed', 'strict'],
+                        help='ACM mode: relaxed=ignore all fixtures, '
+                             'strict=only relax distant fixtures')
+    parser.add_argument('--viz-dir', type=str, default=None,
+                        help='Save planning-world collision meshes (glb) '
+                             'at each grasp stage to this directory')
     args = parser.parse_args()
 
     # --- Environment ---
+    t_total = time.time()
+    t0 = time.time()
     print("Creating RoboCasa env...")
     env = gym.make('RoboCasaKitchen-v1', num_envs=1,
                    robot_uids='tidyverse', control_mode='whole_body',
                    render_mode=args.render)
     env.reset(seed=args.seed)
+    t_env = time.time() - t0
+    print(f"  env setup: {t_env:.2f}s")
 
     robot = env.unwrapped.agent.robot
     scene = env.unwrapped.scene.sub_scenes[0]
     fixtures = env.unwrapped.scene_builder.scene_data[0]['fixtures']
     is_human = (args.render == 'human')
 
-    video_dir = os.path.join(os.path.dirname(__file__), 'videos')
+    # Reposition render camera: higher up, tilted down toward robot
+    from mani_skill.utils import sapien_utils as _su
+    _rpos = robot.pose.p[0].cpu().numpy()
+    _cam_eye = [_rpos[0], _rpos[1] - 3.5, 3.5]  # behind + high
+    _cam_target = [_rpos[0], _rpos[1] + 1.0, 0.8]  # look ahead and down
+    _cam_pose = _su.look_at(_cam_eye, _cam_target)
+    # Convert ManiSkill batched Pose to plain sapien.Pose
+    _p = _cam_pose.raw_pose[0].cpu().numpy()
+    _sapien_pose = sapien.Pose(p=_p[:3], q=_p[3:])
+    for cam in env.unwrapped._human_render_cameras.values():
+        cam.camera.set_local_pose(_sapien_pose)
+
+    video_dir = os.path.expanduser('~/tidyverse_videos')
     os.makedirs(video_dir, exist_ok=True)
     video_writer = None
     if args.render == 'rgb_array':
-        video_path = os.path.join(video_dir, f'robocasa_grasp_seed{args.seed}.mp4')
+        # Find next available run number to avoid overwriting
+        base = f'robocasa_grasp_seed{args.seed}_acm{args.acm}'
+        run = 0
+        while os.path.exists(os.path.join(video_dir, f'{base}_run{run}.mp4')):
+            run += 1
+        video_path = os.path.join(video_dir, f'{base}_run{run}.mp4')
         video_writer = VideoWriter(video_path, fps=30)
+
+    collision_dir = os.path.join(os.path.dirname(__file__), 'collision_images')
+    collision_logger = CollisionLogger(
+        robot, scene, env, collision_dir, render_mode=args.render)
+
+    step_label = ["idle"]  # mutable for closure
+
+    def _burn_label(frame, text):
+        """Burn a text banner onto the top of a frame."""
+        h = frame.shape[0]
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        scale = max(0.5, h / 600)
+        thick = max(1, int(h / 300))
+        (tw, th_), _ = cv2.getTextSize(text, font, scale, thick)
+        cv2.rectangle(frame, (0, 0), (tw + 20, th_ + 16), (0, 0, 0), -1)
+        cv2.putText(frame, text, (10, th_ + 8), font, scale,
+                    (255, 255, 255), thick, cv2.LINE_AA)
 
     def step_fn(action):
         env.step(action)
@@ -685,7 +1021,12 @@ def main():
             frame = env.render()
             if isinstance(frame, torch.Tensor):
                 frame = frame.cpu().numpy()
-            video_writer.add_frame(frame.astype(np.uint8))
+            if frame.ndim == 4:
+                frame = frame[0]
+            frame = frame.astype(np.uint8).copy()
+            _burn_label(frame, step_label[0])
+            video_writer.add_frame(frame)
+        collision_logger.check(step_label[0])
 
     robot_pos = robot.pose.p[0].cpu().numpy()
     arm_base = next(l for l in robot.get_links()
@@ -719,13 +1060,20 @@ def main():
         print(f"  [{i:2d}] {label:45s} dist={dist:.2f}m  ({ftype})")
 
     # --- Stabilize ---
-    base_cmd = robot_pos[:3].copy()
+    # Use base qpos (not robot.pose.p) as hold target — the PD controller
+    # drives base joints, which are relative to the root pose.
+    base_cmd = get_robot_qpos(robot)[:3].copy()
     hold = make_action(ARM_HOME, GRIPPER_OPEN, base_cmd)
+    step_label[0] = "Stabilizing"
     print("\nStabilizing robot...")
+    t0 = time.time()
     wait_until_stable(step_fn, hold, robot)
+    t_stabilize = time.time() - t0
+    print(f"  stabilize: {t_stabilize:.2f}s")
 
     # --- Setup planner ---
     print("Setting up SapienPlanner...")
+    t0 = time.time()
     signal.alarm(30)
     try:
         pw = SapienPlanningWorld(scene, [robot._objs[0]])
@@ -738,21 +1086,37 @@ def main():
         return
     finally:
         signal.alarm(0)
+    t_planner = time.time() - t0
+    print(f"  planner setup: {t_planner:.2f}s")
 
     cube_names = {s[0] for s in spawned}
-    build_kitchen_acm(pw, planner, cube_names)
+    t0 = time.time()
+    build_kitchen_acm(pw, planner, cube_names, mode=args.acm,
+                      robot_pos=arm_base)
+    t_acm = time.time() - t0
+    print(f"  ACM build: {t_acm:.2f}s")
+
+    # --- Snapshot initial planning world ---
+    if args.viz_dir:
+        sync_planner(planner)
+        save_planning_world(pw, os.path.join(args.viz_dir, "initial_home"))
 
     # --- Grasp loop ---
+    timings = {'ik': 0.0, 'planning': 0.0, 'exec': 0.0,
+               'pause': 0.0, 'gripper': 0.0, 'settle': 0.0}
     results = {'success': 0, 'partial': 0, 'unreachable': 0, 'error': 0}
     for ci, (cube_name, cube_pos, label, ftype, dist) in enumerate(spawned):
         print(f"\n{'='*60}")
         print(f"[{ci+1}/{len(spawned)}] {label} ({ftype})  "
               f"dist={dist:.2f}m  pos={cube_pos}")
 
+        step_label[0] = f"grasp {ci+1}/{len(spawned)} {label}"
         try:
             outcome = attempt_grasp(ci, cube_name, cube_pos, label, ftype,
                                     robot, planner, pw, step_fn, env,
-                                    len(spawned))
+                                    len(spawned), timings,
+                                    viz_dir=args.viz_dir,
+                                    step_label=step_label)
         except Exception as e:
             print(f"  ERROR: {e}")
             outcome = 'error'
@@ -773,6 +1137,30 @@ def main():
     print("RESULTS:")
     for k, v in results.items():
         print(f"  {k:12s}: {v}/{len(spawned)}")
+
+    collision_logger.summary()
+
+    t_total_elapsed = time.time() - t_total
+    print(f"\n{'='*60}")
+    print("TIMING BREAKDOWN:")
+    print(f"  env setup:       {t_env:7.2f}s")
+    print(f"  stabilize:       {t_stabilize:7.2f}s")
+    print(f"  planner setup:   {t_planner:7.2f}s")
+    print(f"  ACM build:       {t_acm:7.2f}s")
+    print(f"  --- per-grasp ---")
+    print(f"  IK solving:      {timings['ik']:7.2f}s")
+    print(f"  path planning:   {timings['planning']:7.2f}s")
+    print(f"  traj execution:  {timings['exec']:7.2f}s")
+    print(f"  pauses:          {timings['pause']:7.2f}s")
+    print(f"  gripper:         {timings['gripper']:7.2f}s")
+    print(f"  settle:          {timings['settle']:7.2f}s")
+    grasp_total = sum(timings.values())
+    accounted = t_env + t_stabilize + t_planner + t_acm + grasp_total
+    print(f"  --- totals ---")
+    print(f"  grasp phases:    {grasp_total:7.2f}s")
+    print(f"  accounted:       {accounted:7.2f}s")
+    print(f"  wall clock:      {t_total_elapsed:7.2f}s")
+    print(f"  unaccounted:     {t_total_elapsed - accounted:7.2f}s")
 
     if is_human:
         print("\nDone! Close the window to exit.")

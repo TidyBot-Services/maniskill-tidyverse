@@ -41,15 +41,24 @@ def _patch_scene_builders():
     try:
         from mani_skill.utils.scene_builder.robocasa.scene_builder import (
             RoboCasaSceneBuilder,
+            ROBOT_FRONT_FACING_SIZE,
         )
+
+        # Register tidyverse front-facing size so the robot is placed
+        # far enough from the counter to avoid initial collisions.
+        ROBOT_FRONT_FACING_SIZE["tidyverse"] = 1.1
+
         _orig_robocasa_init = RoboCasaSceneBuilder.initialize
 
         def _patched_robocasa_initialize(self, env_idx, init_config_idxs=None):
             _orig_robocasa_init(self, env_idx, init_config_idxs)
             if self.env.robot_uids == "tidyverse" and self.env.agent is not None:
-                self.env.agent.robot.set_qpos(
-                    self.env.agent.keyframes["rest"].qpos
-                )
+                # Use set_pose for world positioning, base qpos stays at 0.
+                # Then reset the controller so its target matches qpos.
+                qpos = self.env.agent.keyframes["rest"].qpos
+                self.env.agent.robot.set_pose(self.robot_poses[env_idx])
+                self.env.agent.robot.set_qpos(qpos)
+                self.env.agent.reset(qpos)
 
         RoboCasaSceneBuilder.initialize = _patched_robocasa_initialize
     except ImportError:

@@ -29,6 +29,7 @@ from scipy.spatial.transform import Rotation as R
 import mplib.sapien_utils.conversion as _conv
 from mani_skill.utils.wrappers.record import RecordEpisode
 from mani_skill.sensors.camera import CameraConfig
+from viz_planning_world import save_planning_world
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -405,7 +406,7 @@ def create_block(scene, x, table_height):
 # ─── Grasp execution ─────────────────────────────────────────────────────────
 
 def execute_single_grasp(gi, name, target_p, target_q, n_grasps,
-                         robot, planner, pw, step_fn, env):
+                         robot, planner, pw, step_fn, env, viz_dir=None):
     """Execute a full pick-and-place cycle for one grasp strategy.
 
     Steps: IK-seeded pre-grasp → approach → close → lift → drop → return home.
@@ -414,6 +415,12 @@ def execute_single_grasp(gi, name, target_p, target_q, n_grasps,
     grasp_label = f"[{gi+1}/{n_grasps}] {name}"
     target_q_arr = np.array(target_q)
     print(f"  Base: {get_robot_qpos(robot)[:3]}  Arm: {get_robot_qpos(robot)[3:10]}")
+
+    def _snap(stage_name):
+        if viz_dir:
+            sync_planner(planner)
+            slug = name.lower().replace(' ', '_').replace('-', '_')
+            save_planning_world(pw, os.path.join(viz_dir, f"{gi}_{slug}_{stage_name}"))
 
     def hold_open():
         q = get_robot_qpos(robot)
@@ -477,17 +484,20 @@ def execute_single_grasp(gi, name, target_p, target_q, n_grasps,
                        lock_base=used_arm_only, env=env,
                        label="Pre-grasp", robot=robot)
     pause_with_label(env, step_fn, hold_open(), f"{grasp_label} - Pre-grasp")
+    _snap("1_pregrasp")
 
     # 2. Approach
     plan_and_move("Approach", planner, pw, approach_pose,
                   lambda: get_robot_qpos(robot), motion_mask, step_fn,
                   GRIPPER_OPEN, env=env, robot=robot)
     pause_with_label(env, step_fn, hold_open(), f"{grasp_label} - Approach")
+    _snap("2_approach")
 
     # 3. Close gripper
     actuate_gripper(step_fn, env, robot, GRIPPER_CLOSED,
                     f"{grasp_label} - Closing")
     pause_with_label(env, step_fn, hold_closed(), f"{grasp_label} - Grasped")
+    _snap("3_grasped")
 
     # 4. Lift
     lift_pose = MPPose(p=np.array(target_p) + [0, 0, LIFT_HEIGHT],
@@ -496,6 +506,7 @@ def execute_single_grasp(gi, name, target_p, target_q, n_grasps,
                   lambda: get_robot_qpos(robot), motion_mask, step_fn,
                   GRIPPER_CLOSED, planning_time=3.0, env=env, robot=robot)
     pause_with_label(env, step_fn, hold_closed(), f"{grasp_label} - Lifted")
+    _snap("4_lifted")
 
     # 5. Drop block
     actuate_gripper(step_fn, env, robot, GRIPPER_OPEN,
@@ -539,6 +550,9 @@ def main():
     parser.add_argument('--table-x', type=float, default=0.0)
     parser.add_argument('--table-height', type=float, default=0.762,
                         help='Table height in metres (default: 30 in)')
+    parser.add_argument('--viz-dir', type=str, default=None,
+                        help='Save planning-world collision meshes (glb) '
+                             'at each grasp stage to this directory')
     args = parser.parse_args()
 
     # --- Environment ---
@@ -583,6 +597,11 @@ def main():
                .get_pinocchio_model().get_link_names() if 'eef' in n)
     planner = SapienPlanner(pw, move_group=eef)
 
+    # --- Snapshot initial planning world ---
+    if args.viz_dir:
+        sync_planner(planner)
+        save_planning_world(pw, os.path.join(args.viz_dir, "initial_home"))
+
     # --- Grasp loop ---
     grasps = build_grasp_poses(block_pos, arm_base)
     for gi, (name, target_p, target_q) in enumerate(grasps):
@@ -590,7 +609,8 @@ def main():
         print(f"[{gi + 1}/{len(grasps)}] {name}")
         print(f"  Target: pos={target_p}  quat={target_q}")
         execute_single_grasp(gi, name, target_p, target_q, len(grasps),
-                             robot, planner, pw, step_fn, env)
+                             robot, planner, pw, step_fn, env,
+                             viz_dir=args.viz_dir)
 
     # --- Finish ---
     if is_human:
