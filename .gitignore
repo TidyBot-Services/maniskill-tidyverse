@@ -3,3 +3,4 @@ __pycache__/
 franka_description
 robotiq_meshes
 videos/
+handle_reach_images/
