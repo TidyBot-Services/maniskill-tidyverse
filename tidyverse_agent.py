@@ -282,6 +282,13 @@ class TidyVerse(BaseAgent):
                 gripper_passive=passive_finger_joints,
                 base=base_pd_joint_vel,
             ),
+            # Whole-body EE pose: arm EE pose + base position-controlled
+            whole_body_ee=dict(
+                arm=arm_pd_ee_pose,
+                gripper_active=gripper_pd_joint_pos,
+                gripper_passive=passive_finger_joints,
+                base=base_pd_joint_pos,
+            ),
         )
 
         return deepcopy_dict(controller_configs)
@@ -335,6 +342,21 @@ class TidyVerse(BaseAgent):
         for link_name in gripper_links:
             link = self.robot.links_map[link_name]
             link.set_collision_group_bit(group=2, bit_idx=31, bit=1)
+
+    @property
+    def _sensor_configs(self):
+        return [
+            CameraConfig(
+                uid="wrist_camera",
+                pose=sapien.Pose(p=[0, 0, 0.05], q=[1, 0, 0, 0]),
+                width=128,
+                height=128,
+                fov=np.pi / 2,
+                near=0.01,
+                far=100,
+                mount=self.robot.links_map["eef"],
+            )
+        ]
 
     def _after_init(self):
         self.finger1_link = sapien_utils.get_obj_by_name(
