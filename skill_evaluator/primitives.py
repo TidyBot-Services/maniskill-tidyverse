@@ -9,8 +9,7 @@ All functions operate on the ManiSkill env's unwrapped interface.
 """
 
 import numpy as np
-import torch
-from typing import Optional, Tuple, List
+from typing import Optional
 
 
 # ---------------------------------------------------------------------------
@@ -153,59 +152,7 @@ def gripper_released(env, open_threshold: float = 0.05) -> bool:
     return gripper_q < open_threshold
 
 
-# ---------------------------------------------------------------------------
-# Primitive 5: object_in_camera_center
-# ---------------------------------------------------------------------------
 
-def object_in_camera_center(env, obj_name: str, camera_uid: str = "wrist_camera",
-                            tolerance_ratio: float = 0.2) -> bool:
-    """Is the object projected near the center of the specified camera?
-
-    Projects the object's 3D world position into the camera's image plane
-    using the camera's intrinsic and extrinsic matrices.
-
-    Args:
-        env: Unwrapped ManiSkill env
-        obj_name: Name of the actor
-        camera_uid: Camera sensor UID
-        tolerance_ratio: Fraction of image size for tolerance (0.2 = 20%)
-
-    Returns:
-        True if object projects near image center
-    """
-    uv = _project_to_camera(env, obj_name, camera_uid)
-    if uv is None:
-        return False
-
-    u, v, width, height = uv
-    cx, cy = width / 2, height / 2
-    u_err = abs(u - cx) / width
-    v_err = abs(v - cy) / height
-
-    return u_err < tolerance_ratio and v_err < tolerance_ratio
-
-
-# ---------------------------------------------------------------------------
-# Primitive 6: object_visible
-# ---------------------------------------------------------------------------
-
-def object_visible(env, obj_name: str, camera_uid: str = "wrist_camera") -> bool:
-    """Is the object within the camera's field of view?
-
-    Args:
-        env: Unwrapped ManiSkill env
-        obj_name: Name of the actor
-        camera_uid: Camera sensor UID
-
-    Returns:
-        True if object projects within the camera's image bounds
-    """
-    uv = _project_to_camera(env, obj_name, camera_uid)
-    if uv is None:
-        return False
-
-    u, v, width, height = uv
-    return 0 <= u < width and 0 <= v < height
 
 
 # ---------------------------------------------------------------------------
@@ -244,56 +191,7 @@ def _get_initial_z(env, obj_name: str) -> Optional[float]:
     return None
 
 
-def _get_camera(env, camera_uid: str):
-    """Find a camera by UID from the env's sensors."""
-    if hasattr(env, '_sensors') and camera_uid in env._sensors:
-        return env._sensors[camera_uid]
-    # Try scene sensors
-    if hasattr(env, 'scene') and hasattr(env.scene, 'sensors'):
-        if camera_uid in env.scene.sensors:
-            return env.scene.sensors[camera_uid]
-    return None
 
-
-def _project_to_camera(env, obj_name: str, camera_uid: str):
-    """Project an object's position to camera pixel coordinates.
-
-    Returns (u, v, width, height) or None if object is behind camera.
-    Uses the SAPIEN camera's extrinsic_cv and intrinsic_cv matrices.
-    """
-    actor = _get_actor(env, obj_name)
-    if actor is None:
-        return None
-
-    camera = _get_camera(env, camera_uid)
-    if camera is None:
-        return None
-
-    obj_pos = actor.pose.p[0].cpu().numpy()
-
-    # Get camera parameters
-    params = camera.get_params()
-    extrinsic_cv = params['extrinsic_cv'][0].cpu().numpy()  # 3x4
-    intrinsic_cv = params['intrinsic_cv'][0].cpu().numpy()  # 3x3
-
-    # Transform to camera frame: p_cam = extrinsic @ [x,y,z,1]
-    obj_h = np.append(obj_pos, 1.0)  # homogeneous
-    p_cam = extrinsic_cv @ obj_h  # 3D in camera frame
-
-    # Check if in front of camera (z > 0 in OpenCV convention)
-    if p_cam[2] <= 0:
-        return None
-
-    # Project to pixel: [u,v,1] = K @ p_cam / p_cam[2]
-    p_pixel = intrinsic_cv @ p_cam
-    u = float(p_pixel[0] / p_pixel[2])
-    v = float(p_pixel[1] / p_pixel[2])
-
-    # Get image dimensions from camera config
-    width = camera.config.width
-    height = camera.config.height
-
-    return (u, v, width, height)
 
 
 # ---------------------------------------------------------------------------

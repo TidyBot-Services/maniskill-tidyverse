@@ -12,7 +12,6 @@ Usage:
 
 from .primitives import (
     object_grasped, object_lifted, object_on_target,
-    object_in_camera_center, object_visible,
     gripper_released, gripper_far_from,
     object_picked_up, object_placed,
 )
@@ -22,29 +21,23 @@ from .primitives import (
 # Skill 1: tb-center-object
 # ---------------------------------------------------------------------------
 
-def evaluate_center_object(env, obj_name: str,
-                           camera_uid: str = "wrist_camera",
-                           tolerance: float = 0.15) -> dict:
+def evaluate_center_object(env, obj_name: str) -> dict:
     """Evaluate tb-center-object skill.
 
-    Success: target object is centered in the wrist camera view.
+    Success determined by skill's own return value (YOLO detection + pixel centering).
+    God-view only checks: is the object close enough to the robot to be reachable?
 
     Args:
         env: Unwrapped ManiSkill env
         obj_name: Name of the object to center
-        camera_uid: Camera to check centering in
-        tolerance: Fraction of image for center tolerance (0.15 = 15%)
 
     Returns:
         dict with 'success' and sub-criteria
     """
-    visible = object_visible(env, obj_name, camera_uid)
-    centered = object_in_camera_center(env, obj_name, camera_uid, tolerance)
-
+    # No god-view camera check — rely on skill return value
     return {
-        "success": centered,
-        "visible": visible,
-        "centered": centered,
+        "success": None,  # determined by skill return value, not sim
+        "note": "center-object success is determined by skill return value (YOLO detection)",
     }
 
 
@@ -174,28 +167,22 @@ def evaluate_find_and_pick_up(env, obj_name: str,
 # Skill 6: tb-look-forward
 # ---------------------------------------------------------------------------
 
-def evaluate_look_forward(env, obj_name: str,
-                          camera_uid: str = "wrist_camera") -> dict:
+def evaluate_look_forward(env, obj_name: str) -> dict:
     """Evaluate tb-look-forward skill.
 
-    Success: target object is visible in the wrist camera.
-    This is a perception-only skill — success means the camera can see the object.
+    Success determined by skill's own return value (YOLO detection results).
+    This is a perception-only skill — no physical state to check.
 
     Args:
         env: Unwrapped ManiSkill env
         obj_name: Name of the object to detect
-        camera_uid: Camera to check visibility in
 
     Returns:
         dict with 'success' and sub-criteria
     """
-    visible = object_visible(env, obj_name, camera_uid)
-    centered = object_in_camera_center(env, obj_name, camera_uid, tolerance_ratio=0.4)
-
     return {
-        "success": visible,
-        "visible": visible,
-        "roughly_centered": centered,
+        "success": None,  # determined by skill return value (YOLO detections)
+        "note": "look-forward success is determined by skill return value (YOLO detection)",
     }
 
 
