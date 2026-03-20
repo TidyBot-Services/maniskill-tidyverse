@@ -174,15 +174,16 @@ class Kitchen(RoboCasaKitchenEnv):
         return np.random.default_rng(0)
     
     def evaluate(self):
+        import torch
         if hasattr(self, '_check_success'):
             # Lazy-init attributes that _reset_internal would have set
             self._ensure_reset_attrs()
             try:
                 success = self._check_success()
-                return {"success": bool(success)}
+                return {"success": torch.tensor([bool(success)], dtype=torch.bool, device=self.device)}
             except Exception as e:
-                return {"success": False, "error": str(e)}
-        return {}
+                return {"success": torch.tensor([False], dtype=torch.bool, device=self.device), "error": str(e)}
+        return {"success": torch.tensor([False], dtype=torch.bool, device=self.device)}
 
     def compute_robot_base_placement_pose(self, fixture, **kwargs):
         """Stub for RoboCasa's base placement computation. Returns fixture pos + facing direction."""

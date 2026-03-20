@@ -411,7 +411,17 @@ class ManiskillServer:
         """Evaluate current task success via env.evaluate()."""
         uw = self.env.unwrapped
         if hasattr(uw, 'evaluate'):
-            return uw.evaluate()
+            result = uw.evaluate()
+            # Convert tensors to Python types for JSON serialization
+            out = {}
+            for k, v in result.items():
+                if hasattr(v, 'item'):
+                    out[k] = v.item()
+                elif hasattr(v, 'cpu'):
+                    out[k] = v.cpu().item()
+                else:
+                    out[k] = v
+            return out
         return {"success": False, "error": "env has no evaluate()"}
 
     def _cmd_get_task_info(self):
