@@ -261,3 +261,122 @@ def check_obj_upright(env, obj_name: str, th: float = 15.0) -> bool:
     r = R.from_quat([quat[1], quat[2], quat[3], quat[0]])  # xyzw
     euler = r.as_euler("xyz", degrees=True)
     return bool(abs(euler[0]) < th and abs(euler[1]) < th)
+
+
+# =====================================================================
+# SAPIEN fixture joint state helpers
+# (Replaces MuJoCo env.sim.model.joint_name2id / env.sim.data.qpos)
+# =====================================================================
+
+def _get_fixture_articulation(env, fixture):
+    """
+    Find the SAPIEN Articulation object for a RoboCasa fixture.
+    Matches by fixture.name substring in articulation.name.
+    """
+    scene = env.scene
+    arts = scene.get_all_articulations()
+    fname = fixture.name
+    for art in arts:
+        if fname in art.name:
+            return art
+    return None
+
+
+def _get_joint_qpos(env, fixture, joint_suffix):
+    """
+    Get the qpos of a joint on a fixture articulation.
+    joint_suffix: e.g. 'doorhinge', 'slidejoint', 'leftdoorhinge'
+    Returns float or None if not found.
+    """
+    art = _get_fixture_articulation(env, fixture)
+    if art is None:
+        return None
+    joints = art.get_joints()
+    qpos = art.get_qpos()
+    target = joint_suffix  # look for suffix match
+    for i, j in enumerate(joints):
+        if j.name.endswith(joint_suffix) or joint_suffix in j.name:
+            if i < qpos.shape[-1]:
+                val = qpos[..., i]
+                if hasattr(val, 'item'):
+                    return float(val.flatten()[0])
+                return float(val)
+    return None
+
+
+def _get_fixture_joint_qpos_by_suffix(art, joint_suffix):
+    """Get qpos of articulation joint matching suffix. Returns float or None."""
+    if art is None:
+        return None
+    joints = art.get_joints()
+    qpos = art.get_qpos()
+    for i, j in enumerate(joints):
+        if joint_suffix in j.name:
+            if i < qpos.shape[-1]:
+                val = qpos[..., i]
+                return float(val.flatten()[0]) if hasattr(val, 'flatten') else float(val)
+    return None
+
+
+def sapien_get_door_state(env, fixture):
+    """
+    SAPIEN replacement for SingleCabinet.get_door_state(env).
+    Returns {'door': normalized_pct} or {'left': pct, 'right': pct} for double doors.
+    """
+    from mani_skill.utils.scene_builder.robocasa.utils.object_utils import normalize_joint_value
+    cls = type(fixture).__name__
+    art = _get_fixture_articulation(env, fixture)
+    if art is None:
+        return {'door': 0.0}
+
+    if cls == 'DoubleCabinet':
+        right_q = _get_fixture_joint_qpos_by_suffix(art, 'rightdoorhinge') or 0.0
+        left_q = -(_get_fixture_joint_qpos_by_suffix(art, 'leftdoorhinge') or 0.0)
+        return {
+            'left': normalize_joint_value(left_q, 0, np.pi / 2),
+            'right': normalize_joint_value(right_q, 0, np.pi / 2),
+        }
+    elif cls == 'Drawer':
+        q = _get_fixture_joint_qpos_by_suffix(art, 'slidejoint') or 0.0
+        return {'drawer': normalize_joint_value(q, 0, fixture.max_displacement if hasattr(fixture, 'max_displacement') else 0.4)}
+    else:
+        # SingleCabinet or generic
+        q = _get_fixture_joint_qpos_by_suffix(art, 'doorhinge') or 0.0
+        orientation = getattr(fixture, 'orientation', 'right')
+        sign = -1 if orientation == 'left' else 1
+        q = q * sign
+        return {'door': normalize_joint_value(q, 0, np.pi / 2)}
+
+
+def sapien_get_drawer_state(env, fixture):
+    """SAPIEN replacement for Drawer.get_drawer_state(env)."""
+    from mani_skill.utils.scene_builder.robocasa.utils.object_utils import normalize_joint_value
+    art = _get_fixture_articulation(env, fixture)
+    if art is None:
+        return {'drawer': 0.0}
+    q = _get_fixture_joint_qpos_by_suffix(art, 'slidejoint') or 0.0
+    max_disp = getattr(fixture, 'max_displacement', 0.4)
+    return {'drawer': normalize_joint_value(q, 0, max_disp)}
+
+
+def sapien_get_knob_state(env, fixture, knob_location):
+    """SAPIEN replacement for Stove.get_knobs_state() — single knob."""
+    art = _get_fixture_articulation(env, fixture)
+    q = _get_fixture_joint_qpos_by_suffix(art, f'knob_{knob_location}_joint') or 0.0
+    q = q % (2 * np.pi)
+    if q < 0:
+        q += 2 * np.pi
+    return q
+
+
+def sapien_get_knobs_state(env, fixture):
+    """SAPIEN replacement for Stove.get_knobs_state(env)."""
+    from mani_skill.utils.scene_builder.robocasa.fixtures.stove import STOVE_LOCATIONS
+    state = {}
+    for loc in STOVE_LOCATIONS:
+        knob_elem = fixture.knob_joints.get(loc)
+        site_elem = fixture.burner_sites.get(loc)
+        if knob_elem is None or site_elem is None:
+            continue
+        state[loc] = sapien_get_knob_state(env, fixture, loc)
+    return state

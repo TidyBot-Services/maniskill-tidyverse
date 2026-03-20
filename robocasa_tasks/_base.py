@@ -221,15 +221,32 @@ class Kitchen(RoboCasaKitchenEnv):
         return False
     
     def __getattribute__(self, name):
-        if name == 'fixture_refs':
-            refs_list = object.__getattribute__(self, 'fixture_refs')
+        if name in ('fixture_refs', 'objects'):
+            refs_list = object.__getattribute__(self, name)
             if isinstance(refs_list, _FixtureRefsProxy):
                 return refs_list
-            idx = object.__getattribute__(self, '_scene_idx_to_be_loaded') if hasattr(self, '_scene_idx_to_be_loaded') else 0
-            proxy = _FixtureRefsProxy(refs_list, idx)
-            # Don't cache — return fresh proxy each time so idx stays current
-            return proxy
+            if isinstance(refs_list, list):
+                idx = object.__getattribute__(self, '_scene_idx_to_be_loaded') if hasattr(self, '_scene_idx_to_be_loaded') else 0
+                return _FixtureRefsProxy(refs_list, idx)
+            return refs_list
         return object.__getattribute__(self, name)
+
+    @property
+    def fixtures(self):
+        """RoboCasa-compatible access to scene fixtures dict."""
+        idx = getattr(self, '_scene_idx_to_be_loaded', 0)
+        if hasattr(self, 'scene_builder') and hasattr(self.scene_builder, 'scene_data'):
+            if idx < len(self.scene_builder.scene_data):
+                return self.scene_builder.scene_data[idx].get("fixtures", {})
+        return {}
+
+    def _load_scene(self, options):
+        """Ensure _setup_kitchen_references is always called, even for tasks without _get_obj_cfgs."""
+        # Check if parent would skip _setup_kitchen_references
+        if not self.fixtures_only and not hasattr(self, '_get_obj_cfgs'):
+            # Provide a minimal _get_obj_cfgs so parent runs _setup_kitchen_references
+            self._get_obj_cfgs = lambda: []
+        return super()._load_scene(options)
 
     def register_fixture_ref(self, ref_name, fn_kwargs):
         """Override to handle missing fixture types gracefully."""
