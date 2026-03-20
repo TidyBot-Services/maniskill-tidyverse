@@ -3,7 +3,7 @@ from robocasa_tasks import robocasa_utils as OU
 from robocasa_tasks._base import *
 
 
-@register_env("RoboCasa-Pn-P-v0", max_episode_steps=300, asset_download_ids=["RoboCasa"])
+# Abstract base - not registered
 class PnP(Kitchen):
     """
     Class encapsulating the atomic pick and place tasks.

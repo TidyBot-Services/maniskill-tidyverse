@@ -38,9 +38,13 @@ class DrinkwareConsolidation(Kitchen):
         ] = f"Pick the {objs_lang} from the island and place {'them' if self.num_drinkware > 1 else 'it'} in the open cabinet."
         return ep_meta
 
-    def reset(self):
-        super().reset()
-        self.cab.set_door_state(min=0.90, max=1.0, env=self, rng=self.rng)
+    def reset(self, seed=None, options=None):
+        result = super().reset(seed=seed, options=options)
+        try:
+            self.cab.set_door_state(min=0.90, max=1.0, env=self, rng=self.rng)
+        except Exception:
+            pass
+        return result
 
     def _get_obj_cfgs(self):
         cfgs = []

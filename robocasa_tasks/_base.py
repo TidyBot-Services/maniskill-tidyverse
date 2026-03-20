@@ -35,7 +35,19 @@ class _RandomStateShim:
         return self._rs.randint(low, high, size=size)
 
     def choice(self, a, size=None, replace=True, p=None, shuffle=True):
-        return self._rs.choice(a, size=size, replace=replace, p=p)
+        # RandomState.choice only supports 1-D arrays or int
+        # Generator.choice supports multi-dimensional. Emulate it:
+        if isinstance(a, (list, tuple)) and len(a) > 0 and isinstance(a[0], (list, tuple)):
+            idx = self._rs.randint(0, len(a))
+            return a[idx]
+        try:
+            return self._rs.choice(a, size=size, replace=replace, p=p)
+        except ValueError:
+            # Fallback for empty or weird input
+            if len(a) == 0:
+                raise
+            idx = self._rs.randint(0, len(a))
+            return a[idx]
 
 # Fixture types and utilities
 from mani_skill.utils.scene_builder.robocasa.fixtures.fixture import FixtureType
@@ -49,6 +61,94 @@ from robocasa_tasks import robocasa_utils as OU
 
 # Common imports used by task files
 import numpy as np
+
+
+class _FixtureRefsProxy:
+    """
+    Proxy that makes self.fixture_refs behave like a dict (RoboCasa API)
+    while the underlying ManiSkill storage is a list-of-dicts.
+    """
+    def __init__(self, refs_list, idx):
+        object.__setattr__(self, '_refs_list', refs_list)
+        object.__setattr__(self, '_idx', idx)
+
+    def _ensure_idx(self, idx):
+        refs_list = object.__getattribute__(self, '_refs_list')
+        while len(refs_list) <= idx:
+            refs_list.append({})
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            refs_list = object.__getattribute__(self, '_refs_list')
+            return refs_list[key]
+        idx = object.__getattribute__(self, '_idx')
+        self._ensure_idx(idx)
+        refs_list = object.__getattribute__(self, '_refs_list')
+        return refs_list[idx][key]
+
+    def __setitem__(self, key, value):
+        if isinstance(key, int):
+            refs_list = object.__getattribute__(self, '_refs_list')
+            refs_list[key] = value
+            return
+        idx = object.__getattribute__(self, '_idx')
+        self._ensure_idx(idx)
+        refs_list = object.__getattribute__(self, '_refs_list')
+        refs_list[idx][key] = value
+
+    def __contains__(self, key):
+        if isinstance(key, int):
+            refs_list = object.__getattribute__(self, '_refs_list')
+            return key < len(refs_list)
+        idx = object.__getattribute__(self, '_idx')
+        self._ensure_idx(idx)
+        refs_list = object.__getattribute__(self, '_refs_list')
+        return key in refs_list[idx]
+
+    def __iter__(self):
+        idx = object.__getattribute__(self, '_idx')
+        refs_list = object.__getattribute__(self, '_refs_list')
+        if idx < len(refs_list):
+            return iter(refs_list[idx])
+        return iter({})
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except (KeyError, IndexError):
+            return default
+
+    def items(self):
+        idx = object.__getattribute__(self, '_idx')
+        refs_list = object.__getattribute__(self, '_refs_list')
+        if idx < len(refs_list):
+            return refs_list[idx].items()
+        return {}.items()
+
+    def keys(self):
+        idx = object.__getattribute__(self, '_idx')
+        refs_list = object.__getattribute__(self, '_refs_list')
+        if idx < len(refs_list):
+            return refs_list[idx].keys()
+        return {}.keys()
+
+    def values(self):
+        idx = object.__getattribute__(self, '_idx')
+        refs_list = object.__getattribute__(self, '_refs_list')
+        if idx < len(refs_list):
+            return refs_list[idx].values()
+        return {}.values()
+
+    def append(self, item):
+        """Support list-style append (ManiSkill uses fixture_refs.append({}))."""
+        refs_list = object.__getattribute__(self, '_refs_list')
+        refs_list.append(item)
+        # Update idx to point to newly appended item
+        object.__setattr__(self, '_idx', len(refs_list) - 1)
+
+    def __len__(self):
+        refs_list = object.__getattribute__(self, '_refs_list')
+        return len(refs_list)
 
 
 class Kitchen(RoboCasaKitchenEnv):
@@ -120,6 +220,37 @@ class Kitchen(RoboCasaKitchenEnv):
             pass
         return False
     
+    def __getattribute__(self, name):
+        if name == 'fixture_refs':
+            refs_list = object.__getattribute__(self, 'fixture_refs')
+            if isinstance(refs_list, _FixtureRefsProxy):
+                return refs_list
+            idx = object.__getattribute__(self, '_scene_idx_to_be_loaded') if hasattr(self, '_scene_idx_to_be_loaded') else 0
+            proxy = _FixtureRefsProxy(refs_list, idx)
+            # Don't cache — return fresh proxy each time so idx stays current
+            return proxy
+        return object.__getattribute__(self, name)
+
+    def register_fixture_ref(self, ref_name, fn_kwargs):
+        """Override to handle missing fixture types gracefully."""
+        try:
+            return super().register_fixture_ref(ref_name, fn_kwargs)
+        except (KeyError, AssertionError):
+            # Fixture type not present in this scene layout — try fallback to COUNTER
+            scene_idx = getattr(self, '_scene_idx_to_be_loaded', 0)
+            raw_refs = object.__getattribute__(self, 'fixture_refs')
+            try:
+                from mani_skill.utils.scene_builder.robocasa.fixtures.fixture import FixtureType
+                fallback = self.scene_builder.get_fixture(
+                    self.scene_builder.scene_data[scene_idx]["fixtures"],
+                    id=FixtureType.COUNTER
+                )
+                raw_refs[scene_idx][ref_name] = fallback
+                return fallback
+            except Exception:
+                raw_refs[scene_idx][ref_name] = None
+                return None
+
     def get_fixture(self, fixture_id=None, ref=None, ref_fixture=None, id=None, size=None):
         """Get a fixture by id (compatibility with RoboCasa API).
         
