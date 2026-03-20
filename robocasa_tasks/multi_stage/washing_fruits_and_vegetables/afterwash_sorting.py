@@ -3,8 +3,21 @@ from robocasa_tasks import robocasa_utils as OU
 import random
 
 from robocasa_tasks._base import *
-# TODO: port get_cats_by_type
-def get_cats_by_type(obj_type): return []
+# ManiSkill's OBJ_CATEGORIES lacks "types" metadata; hardcode from RoboCasa source
+_TYPE_MAP = {
+    "fruit": ["apple", "banana", "kiwi", "mango", "orange", "peach", "pear", "tangerine", "dates"],
+    "vegetable": ["avocado", "bell_pepper", "broccoli", "carrot", "corn", "cucumber",
+                   "eggplant", "garlic", "lemon", "lime", "mushroom", "onion", "potato",
+                   "squash", "sweet_potato", "tomato"],
+}
+
+def get_cats_by_type(types=None, obj_registries=None, **kwargs):
+    if types is None:
+        return []
+    res = []
+    for t in types:
+        res.extend(_TYPE_MAP.get(t, []))
+    return res
 
 
 @register_env("RoboCasa-Afterwash-Sorting-v0", max_episode_steps=300, asset_download_ids=["RoboCasa"])
