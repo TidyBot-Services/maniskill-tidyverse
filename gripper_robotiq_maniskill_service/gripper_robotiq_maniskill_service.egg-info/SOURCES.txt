@@ -1,9 +1,0 @@
-setup.py
-gripper_robotiq_maniskill_service.egg-info/PKG-INFO
-gripper_robotiq_maniskill_service.egg-info/SOURCES.txt
-gripper_robotiq_maniskill_service.egg-info/dependency_links.txt
-gripper_robotiq_maniskill_service.egg-info/requires.txt
-gripper_robotiq_maniskill_service.egg-info/top_level.txt
-gripper_server/__init__.py
-gripper_server/config.py
-gripper_server/server.py

@@ -1,9 +1,0 @@
-setup.py
-camera_realsense_maniskill_service.egg-info/PKG-INFO
-camera_realsense_maniskill_service.egg-info/SOURCES.txt
-camera_realsense_maniskill_service.egg-info/dependency_links.txt
-camera_realsense_maniskill_service.egg-info/requires.txt
-camera_realsense_maniskill_service.egg-info/top_level.txt
-camera_server/__init__.py
-camera_server/config.py
-camera_server/server.py

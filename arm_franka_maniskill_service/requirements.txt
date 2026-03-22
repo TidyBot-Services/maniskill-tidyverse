@@ -1,5 +1,0 @@
-pyzmq
-msgpack
-numpy
-pytorch_kinematics
-torch

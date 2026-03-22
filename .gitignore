@@ -4,3 +4,10 @@ franka_description
 robotiq_meshes
 videos/
 handle_reach_images/
+
+# Driver services (separate repos in TidyBot-Services org)
+arm_franka_maniskill_service/
+gripper_robotiq_maniskill_service/
+base_tidybot_maniskill_service/
+camera_realsense_maniskill_service/
+maniskill_server/

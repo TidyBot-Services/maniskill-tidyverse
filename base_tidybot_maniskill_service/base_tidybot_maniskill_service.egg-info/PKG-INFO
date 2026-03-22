@@ -1,5 +1,0 @@
-Metadata-Version: 2.4
-Name: base-tidybot-maniskill-service
-Version: 0.1.0
-Requires-Dist: numpy
-Dynamic: requires-dist

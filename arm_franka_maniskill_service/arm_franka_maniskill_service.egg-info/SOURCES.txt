@@ -1,9 +1,0 @@
-setup.py
-arm_franka_maniskill_service.egg-info/PKG-INFO
-arm_franka_maniskill_service.egg-info/SOURCES.txt
-arm_franka_maniskill_service.egg-info/dependency_links.txt
-arm_franka_maniskill_service.egg-info/requires.txt
-arm_franka_maniskill_service.egg-info/top_level.txt
-franka_server/__init__.py
-franka_server/config.py
-franka_server/server.py

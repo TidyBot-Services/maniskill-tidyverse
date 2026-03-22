@@ -1,9 +1,0 @@
-setup.py
-base_server/__init__.py
-base_server/config.py
-base_server/server.py
-base_tidybot_maniskill_service.egg-info/PKG-INFO
-base_tidybot_maniskill_service.egg-info/SOURCES.txt
-base_tidybot_maniskill_service.egg-info/dependency_links.txt
-base_tidybot_maniskill_service.egg-info/requires.txt
-base_tidybot_maniskill_service.egg-info/top_level.txt
