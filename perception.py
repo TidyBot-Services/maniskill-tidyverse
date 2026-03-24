@@ -92,7 +92,7 @@ def deproject_pixels_to_world(pixels_uv, depth_img, intrinsic, cam2world_gl):
 
 def perceive_objects(obs, env, camera_name="base_camera",
                      min_pixels=50, max_depth_mm=5000,
-                     target_names=None):
+                     target_names=None, skip_filter=True):
     """Extract object detections from camera observations.
 
     Args:
@@ -151,11 +151,11 @@ def perceive_objects(obs, env, camera_name="base_camera",
         if is_robot:
             continue
 
-        # Skip fixture/scene elements — only target graspable objects.
+        # Filter by target names or skip known fixture prefixes
         if target_names is not None:
             if obj_name not in target_names:
                 continue
-        else:
+        elif skip_filter:
             _skip_prefixes = (
                 'wall_', 'floor_', 'counter_', 'cab_', 'stove_', 'sink_',
                 'fridge_', 'microwave_', 'dishwasher_', 'stack_', 'shelves_',
