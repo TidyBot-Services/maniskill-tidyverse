@@ -145,7 +145,7 @@ def perceive_objects(obs, env, camera_name="base_camera",
             continue
 
         obj_name = obj.name if hasattr(obj, 'name') else str(obj)
-        is_robot = obj_name in robot_link_names or isinstance(obj, Link)
+        is_robot = obj_name in robot_link_names
 
         # Skip robot links
         if is_robot:
@@ -225,6 +225,126 @@ def perceive_objects(obs, env, camera_name="base_camera",
         results.append(result)
 
     return results
+
+
+def perceive_by_seg_id(obs, seg_id, camera_name="base_camera", min_pixels=20,
+                       max_depth_mm=5000):
+    """Back-project a known seg_id from camera data to 3D world position.
+
+    Unlike perceive_objects which discovers objects, this targets a specific
+    segmentation ID (e.g., a drawer link whose seg_id is already known).
+
+    Returns PerceptionResult or None if not visible.
+    """
+    sensor_data = obs["sensor_data"][camera_name]
+    depth = common.to_numpy(sensor_data["depth"][0])[..., 0]
+    seg = common.to_numpy(sensor_data["segmentation"][0])[..., 0]
+    sensor_params = obs["sensor_param"][camera_name]
+    intrinsic = common.to_numpy(sensor_params["intrinsic_cv"][0])
+    cam2world = common.to_numpy(sensor_params["cam2world_gl"][0])
+
+    mask = seg == seg_id
+    n_pixels = int(mask.sum())
+    if n_pixels < min_pixels:
+        return None
+
+    ys, xs = np.where(mask)
+    pixels = np.stack([xs, ys], axis=-1)
+    pixel_depths = depth[ys, xs]
+    valid = (pixel_depths > 0) & (pixel_depths < max_depth_mm)
+    if valid.sum() < min_pixels // 2:
+        return None
+
+    valid_pixels = pixels[valid]
+    pts_3d = deproject_pixels_to_world(valid_pixels, depth, intrinsic, cam2world)
+    finite_mask = np.all(np.isfinite(pts_3d), axis=1)
+    pts_3d = pts_3d[finite_mask]
+    if len(pts_3d) < 5:
+        return None
+
+    bbox_min = np.min(pts_3d, axis=0)
+    bbox_max = np.max(pts_3d, axis=0)
+    center_3d = (bbox_min + bbox_max) / 2.0
+
+    # Fit plane to 3D points via PCA to get surface normal
+    surface_normal = None
+    if len(pts_3d) >= 10:
+        centroid = np.mean(pts_3d, axis=0)
+        centered = pts_3d - centroid
+        _, _, vh = np.linalg.svd(centered, full_matrices=False)
+        normal = vh[2]  # smallest singular value = plane normal
+        # Orient normal toward the camera (away from surface)
+        cam_pos = cam2world[:3, 3]
+        if np.dot(normal, cam_pos - centroid) < 0:
+            normal = -normal
+        surface_normal = normal
+
+    result = PerceptionResult(
+        name=f"seg_{seg_id}",
+        seg_id=seg_id,
+        center_3d=center_3d,
+        bbox_3d_min=bbox_min,
+        bbox_3d_max=bbox_max,
+        ellipse_axes=(0.0, 0.0),
+        ellipse_angle=0.0,
+        mask_pixels=n_pixels,
+    )
+    result.surface_normal = surface_normal
+    return result
+
+
+def find_handle_targets(fixtures, env, fixture_types=None):
+    """Discover handle link names from articulated fixtures for perception targeting.
+
+    Args:
+        fixtures: dict of fixture_name -> fixture object
+        env: ManiSkill env (unwrapped)
+        fixture_types: tuple of fixture classes to include (default: Drawer only)
+
+    Returns:
+        list of dicts with keys: fixture_name, fixture_type, link_name, link,
+            articulation, fixture, front_dir, fixture_yaw
+    """
+    if fixture_types is None:
+        fixture_types = (Drawer,)
+
+    seg_map = env.segmentation_id_map
+    targets = []
+    for fname, fix in fixtures.items():
+        if not isinstance(fix, fixture_types):
+            continue
+        if not getattr(fix, 'is_articulation', False):
+            continue
+        art = fix.articulation
+        if art is None:
+            continue
+
+        fxt_yaw = fix.euler[2] if hasattr(fix, 'euler') and len(fix.euler) > 2 else 0.0
+        front_dir = np.array([np.sin(fxt_yaw), -np.cos(fxt_yaw), 0.0])
+
+        for link in art.get_links():
+            lname = link.get_name()
+            if lname in ('dummy_root_0', 'object'):
+                continue
+            if 'knob' in lname.lower():
+                continue
+
+            # Register this link in segmentation map so perceive_objects can find it
+            sid = int(link.per_scene_id)
+            seg_map[sid] = link
+
+            targets.append({
+                'fixture_name': fname,
+                'fixture_type': type(fix).__name__,
+                'link_name': lname,
+                'link': link,
+                'articulation': art,
+                'fixture': fix,
+                'front_dir': front_dir,
+                'fixture_yaw': fxt_yaw,
+            })
+
+    return targets
 
 
 def classify_fixture_context(obj_center, fixtures):
