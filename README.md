@@ -387,10 +387,10 @@ python test_perception_grasp.py --render rgb_array --seed 0 --spawn-test-objects
 7. **Approach** — plan to refined grasp pose
 8. **Grasp → Lift → Transport → Drop → Return home**
 
-### Drawer Opening Pipeline (`debug_grasp_normal.py`)
+### Drawer Opening Pipeline (`test_drawer_pull.py`)
 
 ```bash
-python debug_grasp_normal.py
+python test_drawer_pull.py
 ```
 
 Opens a drawer using perception-only approach (no fixture metadata for orientation):
@@ -416,11 +416,10 @@ Kitchen fixtures are approximated as **AABB boxes** added to the mplib planning 
 | File | Contents |
 |------|----------|
 | `perception.py` | `PerceptionResult`, `deproject_pixels_to_world`, `perceive_objects`, `perceive_by_seg_id` (with surface normal), `find_handle_targets`, `classify_fixture_context`, `save_perception_debug` |
-| `grasp_strategies.py` | Grasp pose builders (TopDown, Angled45, Front), `choose_grasp_strategy` with yaw variations |
+| `grasp_strategies.py` | Grasp pose builders (TopDown, Angled45, Front), `front_grasp_from_normal`, `choose_grasp_strategy` with yaw variations |
 | `planning_utils.py` | Monkey-patch for Robotiq meshes, AABB computation, `add_fixture_boxes_to_planner`, `build_kitchen_acm`, `resolve_start_collisions` |
 | `execution.py` | Constants, `make_action`, `execute_trajectory`, `attempt_grasp` (full pipeline), 180° flip IK fallback |
-| `debug_grasp_normal.py` | Drawer opening: perceive handle → surface normal → front grasp + pull open |
-| `test_drawer_open.py` | Fuller drawer opening pipeline (WIP — less tested) |
+| `test_drawer_pull.py` | Drawer opening: perceive handle → surface normal → front grasp + pull open |
 | `viz_planning_world.py` | Export mplib planning world collision meshes to .glb for inspection |
 
 ## Known Limitations

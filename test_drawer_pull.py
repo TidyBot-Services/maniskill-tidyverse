@@ -6,11 +6,9 @@ import tidyverse_agent, mani_skill.envs, gymnasium as gym
 import planning_utils  # monkey-patch
 from mplib.sapien_utils import SapienPlanner, SapienPlanningWorld
 from mplib import Pose as MPPose
-import sapien
 from mani_skill.utils import common
-from scipy.spatial.transform import Rotation as Rot
-from transforms3d.quaternions import qmult
 from perception import find_handle_targets, perceive_by_seg_id
+from grasp_strategies import front_grasp_from_normal
 from planning_utils import sync_planner
 from execution import (ARM_HOME, GRIPPER_OPEN, GRIPPER_CLOSED,
                        MASK_ARM_ONLY, MASK_WHOLE_BODY,
@@ -22,11 +20,6 @@ signal.signal(signal.SIGALRM, lambda s, f: (_ for _ in ()).throw(TimeoutError())
 PULL_DISTANCE = 0.15
 VIDEO_DIR = os.path.expanduser('~/tidyverse_videos')
 os.makedirs(VIDEO_DIR, exist_ok=True)
-
-
-def _euler_grasp(yaw):
-    q = Rot.from_euler('yz', [np.pi / 2, yaw]).as_quat()
-    return np.array([q[3], q[0], q[1], q[2]])
 
 
 def main():
@@ -91,10 +84,8 @@ def main():
     print(f"Normal: {normal}")
     print(f"Yaw: {np.degrees(yaw):.1f}°")
 
-    # Grasp orientation: front + 90° around approach axis
-    q_front = _euler_grasp(yaw)
-    q_rot90 = np.array([np.cos(np.pi/4), 0, 0, np.sin(np.pi/4)])  # wxyz
-    q_grasp = qmult(q_front, q_rot90)
+    # Grasp orientation: front + 90° finger rotation for horizontal bar
+    q_grasp = front_grasp_from_normal(normal, rotate_fingers=True)
 
     # Setup planner
     pw = SapienPlanningWorld(scene, [robot._objs[0]])

@@ -1,6 +1,7 @@
 """Grasp strategy selection: choose grasp poses based on perceived object properties."""
 import numpy as np
 from transforms3d.euler import euler2quat
+from transforms3d.quaternions import qmult
 from scipy.spatial.transform import Rotation as R
 
 
@@ -53,6 +54,30 @@ def build_handle_grasps(handle_pos, arm_base):
          handle_pos + np.array([-0.06 * cos_y, -0.06 * sin_y, 0.08]),
          np.array(front_vert_rot.as_quat()[[3, 0, 1, 2]])),
     ]
+
+
+def front_grasp_from_normal(surface_normal, rotate_fingers=False):
+    """Compute front-facing grasp orientation from a perceived surface normal.
+
+    Extracts the approach yaw from the normal's XY projection, then uses
+    the standard Ry(90°) + Rz(yaw) convention.
+
+    Args:
+        surface_normal: (3,) outward-facing surface normal in world frame
+        rotate_fingers: if True, rotate fingers 90° around approach axis
+            (for gripping horizontal bar handles)
+
+    Returns:
+        wxyz quaternion
+    """
+    approach = -surface_normal / np.linalg.norm(surface_normal)
+    yaw = np.arctan2(approach[1], approach[0])
+    q = R.from_euler('yz', [np.pi / 2, yaw]).as_quat()
+    q_wxyz = np.array([q[3], q[0], q[1], q[2]])
+    if rotate_fingers:
+        q_rot90 = np.array([np.cos(np.pi / 4), 0, 0, np.sin(np.pi / 4)])
+        q_wxyz = qmult(q_wxyz, q_rot90)
+    return q_wxyz
 
 
 def select_grasps(obj_pos, arm_base, ftype, label, obj_yaw=0.0):
