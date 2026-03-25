@@ -3,7 +3,7 @@
 import sys, os, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-import tidyverse_agent  # registers 'tidyverse'
+import maniskill_tidyverse.tidyverse_agent  # registers 'tidyverse'
 import mani_skill.envs
 import gymnasium as gym
 import numpy as np

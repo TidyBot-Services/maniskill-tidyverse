@@ -17,25 +17,25 @@ import torch, sapien, cv2
 import gymnasium as gym
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import tidyverse_agent   # noqa: F401 — registers 'tidyverse'
+import maniskill_tidyverse.tidyverse_agent   # noqa: F401 — registers 'tidyverse'
 import mani_skill.envs    # noqa: F401 — registers envs
 
 from mplib import Pose as MPPose
 from mplib.sapien_utils import SapienPlanner, SapienPlanningWorld
 
-from motion_utils import (
+from maniskill_tidyverse.motion_utils import (
     ARM_HOME, GRIPPER_OPEN, GRIPPER_CLOSED, MASK_ARM_ONLY, MASK_WHOLE_BODY,
     get_robot_qpos, make_action, wait_until_stable, execute_trajectory,
     actuate_gripper,
 )
-from grasp_strategies import select_grasps, build_place_poses, DROP_HEIGHT
-from planning_utils import sync_planner, build_kitchen_acm  # also applies monkey-patch
-from video_utils import VideoWriter, CollisionLogger
-from placement_utils import (
+from maniskill_tidyverse.grasp_strategies import select_grasps, build_place_poses, DROP_HEIGHT
+from maniskill_tidyverse.planning_utils import sync_planner, build_kitchen_acm  # also applies monkey-patch
+from maniskill_tidyverse.video_utils import VideoWriter, CollisionLogger
+from maniskill_tidyverse.placement_utils import (
     CUBE_HALF, COLORS, spawn_cube, collect_placements,
 )
-from success_utils import compute_step_flags, format_flags
-from viz_planning_world import save_planning_world
+from maniskill_tidyverse.success_utils import compute_step_flags, format_flags
+from maniskill_tidyverse.viz_planning_world import save_planning_world
 
 
 # ─── Constants ────────────────────────────────────────────────────────────────

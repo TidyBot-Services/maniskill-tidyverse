@@ -9,7 +9,7 @@ import sapien
 import gymnasium as gym
 
 sys.path.insert(0, os.path.dirname(__file__))
-import tidyverse_agent  # noqa: F401 — registers 'tidyverse' robot
+import maniskill_tidyverse.tidyverse_agent  # noqa: F401 — registers 'tidyverse' robot
 import mani_skill.envs  # noqa: F401 — registers ManiSkill envs
 
 from mplib import Pose as MPPose
@@ -29,7 +29,7 @@ from scipy.spatial.transform import Rotation as R
 import mplib.sapien_utils.conversion as _conv
 from mani_skill.utils.wrappers.record import RecordEpisode
 from mani_skill.sensors.camera import CameraConfig
-from viz_planning_world import save_planning_world
+from maniskill_tidyverse.viz_planning_world import save_planning_world
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 

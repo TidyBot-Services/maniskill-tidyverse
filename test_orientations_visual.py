@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 def timeout_handler(signum, frame): raise TimeoutError("timeout")
 signal.signal(signal.SIGALRM, timeout_handler)
 
-import tidyverse_agent, mani_skill.envs, gymnasium as gym
+import maniskill_tidyverse.tidyverse_agent, mani_skill.envs, gymnasium as gym
 from mplib.sapien_utils import SapienPlanner, SapienPlanningWorld
 from mplib import Pose as MPPose
 from mplib.collision_detection.fcl import *

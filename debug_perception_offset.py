@@ -3,11 +3,11 @@ import os, sys, numpy as np, torch, gymnasium as gym
 
 # Register agent
 sys.path.insert(0, os.path.dirname(__file__))
-import tidyverse_agent  # noqa: F401
+import maniskill_tidyverse.tidyverse_agent  # noqa: F401
 from mani_skill.utils import common
 
-from perception import perceive_objects
-from execution import make_action, ARM_HOME, GRIPPER_OPEN, wait_until_stable, get_robot_qpos
+from maniskill_tidyverse.perception import perceive_objects
+from maniskill_tidyverse.execution import make_action, ARM_HOME, GRIPPER_OPEN, wait_until_stable, get_robot_qpos
 from test_perception_grasp import spawn_test_objects
 
 

@@ -5,7 +5,7 @@ RoboCasa v0.2 tasks ported to ManiSkill.
 each registered as a gymnasium environment.
 
 Usage:
-    import robocasa_tasks  # auto-registers all envs
+    from maniskill_tidyverse import robocasa_tasks  # auto-registers all envs
     env = gymnasium.make("RoboCasa-Prepare-Coffee-v0", robot_uids="tidyverse")
 """
 

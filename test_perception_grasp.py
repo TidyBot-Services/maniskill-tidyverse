@@ -21,7 +21,7 @@ import torch, sapien, cv2
 import gymnasium as gym
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import tidyverse_agent   # noqa: F401 — registers 'tidyverse'
+import maniskill_tidyverse.tidyverse_agent   # noqa: F401 — registers 'tidyverse'
 import mani_skill.envs    # noqa: F401 — registers envs
 try:
     import robocasa_tasks  # noqa: registers RoboCasa single-stage tasks
@@ -29,21 +29,21 @@ except ImportError:
     pass
 
 # Apply monkey-patch by importing planning_utils
-import planning_utils  # noqa: F401 — patches SapienPlanningWorld
+import maniskill_tidyverse.planning_utils  # noqa: F401 — patches SapienPlanningWorld
 
 from mplib.sapien_utils import SapienPlanner, SapienPlanningWorld
 from mani_skill.utils import common
 
-from perception import (
+from maniskill_tidyverse.perception import (
     perceive_objects, classify_fixture_context, save_perception_debug,
     PerceptionResult, deproject_pixels_to_world,
 )
-from grasp_strategies import choose_grasp_strategy
-from planning_utils import (
+from maniskill_tidyverse.grasp_strategies import choose_grasp_strategy
+from maniskill_tidyverse.planning_utils import (
     add_fixture_boxes_to_planner, build_kitchen_acm, sync_planner,
     compute_articulation_aabb,
 )
-from execution import (
+from maniskill_tidyverse.execution import (
     ARM_HOME, GRIPPER_OPEN, GRIPPER_CLOSED,
     PRE_GRASP_HEIGHT, LIFT_HEIGHT,
     MASK_ARM_ONLY, MASK_WHOLE_BODY,
@@ -51,7 +51,7 @@ from execution import (
     make_action, get_robot_qpos, wait_until_stable,
     execute_trajectory, actuate_gripper, attempt_grasp,
 )
-from viz_planning_world import save_planning_world
+from maniskill_tidyverse.viz_planning_world import save_planning_world
 
 
 # ─── Object Spawning (optional — for testing without task env objects) ────────

@@ -11,7 +11,7 @@ def timeout_handler(signum, frame):
     raise TimeoutError("Operation timed out!")
 signal.signal(signal.SIGALRM, timeout_handler)
 
-import tidyverse_agent
+import maniskill_tidyverse.tidyverse_agent
 import mani_skill.envs
 import gymnasium as gym
 

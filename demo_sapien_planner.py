@@ -6,7 +6,7 @@ import torch
 import sapien
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import tidyverse_agent
+import maniskill_tidyverse.tidyverse_agent
 import mani_skill.envs
 import gymnasium as gym
 from mplib.sapien_utils import SapienPlanner, SapienPlanningWorld

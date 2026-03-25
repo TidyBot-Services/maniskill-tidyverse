@@ -57,7 +57,7 @@ from mani_skill.utils.scene_builder.robocasa.scene_builder import RoboCasaSceneB
 from mani_skill.utils.registration import register_env
 
 # OU utilities (our SAPIEN port)
-from robocasa_tasks import robocasa_utils as OU
+from maniskill_tidyverse.robocasa_tasks import robocasa_utils as OU
 
 # Common imports used by task files
 import numpy as np

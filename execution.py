@@ -9,9 +9,9 @@ import torch
 from mplib import Pose as MPPose
 from transforms3d.quaternions import qmult
 
-from perception import perceive_objects
-from planning_utils import sync_planner, resolve_start_collisions
-from viz_planning_world import save_planning_world
+from maniskill_tidyverse.perception import perceive_objects
+from maniskill_tidyverse.planning_utils import sync_planner, resolve_start_collisions
+from maniskill_tidyverse.viz_planning_world import save_planning_world
 
 # 180° rotation around gripper approach axis (local z) — swaps finger sides
 # Mechanically identical grasp but different arm joint configuration

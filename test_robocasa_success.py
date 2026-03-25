@@ -25,11 +25,11 @@ import torch, sapien, cv2
 import gymnasium as gym
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import tidyverse_agent   # noqa: F401 — registers 'tidyverse'
+import maniskill_tidyverse.tidyverse_agent   # noqa: F401 — registers 'tidyverse'
 import mani_skill.envs    # noqa: F401 — registers envs
 
-from success_utils import compute_step_flags, format_flags
-from task_registry import (get_grasp_instruction, get_pick_place_instruction,
+from maniskill_tidyverse.success_utils import compute_step_flags, format_flags
+from maniskill_tidyverse.task_registry import (get_grasp_instruction, get_pick_place_instruction,
                            check_phase_expectations, EXPECTED_FLAGS)
 
 from mplib import Pose as MPPose

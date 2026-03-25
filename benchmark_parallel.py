@@ -27,7 +27,7 @@ import gymnasium as gym
 from mani_skill.sensors.camera import CameraConfig
 
 # Import agent (registers 'tidyverse')
-import tidyverse_agent as _ta
+import maniskill_tidyverse.tidyverse_agent as _ta
 import mani_skill.envs
 
 # Parse args from env vars

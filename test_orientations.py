@@ -5,7 +5,7 @@ Usage:
 """
 import sys, numpy as np
 sys.path.insert(0, '/home/yifei/.openclaw/workspace/maniskill_tidyverse')
-import tidyverse_agent, mani_skill.envs
+import maniskill_tidyverse.tidyverse_agent, mani_skill.envs
 import gymnasium as gym
 import sapien, mplib, torch
 from mplib.pymp import Pose as MPPose

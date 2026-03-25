@@ -20,7 +20,7 @@ import torch, sapien, cv2
 import gymnasium as gym
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import tidyverse_agent   # noqa: F401 — registers 'tidyverse'
+import maniskill_tidyverse.tidyverse_agent   # noqa: F401 — registers 'tidyverse'
 import mani_skill.envs    # noqa: F401 — registers envs
 
 from mplib import Pose as MPPose
@@ -38,7 +38,7 @@ from sapien.physx import (
 from transforms3d.euler import euler2mat, euler2quat
 from scipy.spatial.transform import Rotation as R
 import mplib.sapien_utils.conversion as _conv
-from viz_planning_world import save_planning_world
+from maniskill_tidyverse.viz_planning_world import save_planning_world
 # Video writer helper
 class VideoWriter:
     """Accumulate frames and write mp4 on close."""
