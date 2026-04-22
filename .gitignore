@@ -16,3 +16,4 @@ franka_description
 realsense2_description
 robotiq_meshes
 *.egg-info/
+tidybot_uni/
