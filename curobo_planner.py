@@ -96,7 +96,10 @@ class CuroboPlanner:
         """Update collision world with kitchen fixture cuboids.
 
         Args:
-            cuboids: list of {"name": str, "center": [x,y,z], "half_size": [hx,hy,hz]}
+            cuboids: list of dicts, each with keys:
+                - "name" (str), "center" [x,y,z], "half_size" [hx,hy,hz]
+                - optional "quat_wxyz" [w,x,y,z] for oriented cuboids (OBB).
+                  Defaults to identity if omitted (axis-aligned, the common case).
             robot_pos: [x, y] robot base position — cuboids overlapping this are skipped
             max_distance: only include cuboids within this distance from robot (meters)
         """
@@ -110,6 +113,7 @@ class CuroboPlanner:
         for c in cuboids:
             cx, cy, cz = c["center"]
             hx, hy, hz = c["half_size"]
+            quat = c.get("quat_wxyz", [1.0, 0.0, 0.0, 0.0])
 
             if robot_pos is not None:
                 rx, ry = robot_pos[0], robot_pos[1]
@@ -129,7 +133,7 @@ class CuroboPlanner:
 
             cu_cuboids.append(CuCuboid(
                 name=c["name"],
-                pose=[cx, cy, cz, 1, 0, 0, 0],  # position + identity quaternion
+                pose=[cx, cy, cz, quat[0], quat[1], quat[2], quat[3]],
                 dims=[hx * 2, hy * 2, hz * 2],   # cuRobo uses full dims, not half
             ))
 
@@ -323,9 +327,10 @@ class CuroboPlanner:
                     skipped_far += 1
                     continue
 
+            quat = c.get("quat_wxyz", [1.0, 0.0, 0.0, 0.0])
             cu_cuboids.append(CuCuboid(
                 name=c["name"],
-                pose=[cx, cy, cz, 1, 0, 0, 0],
+                pose=[cx, cy, cz, quat[0], quat[1], quat[2], quat[3]],
                 dims=[hx * 2, hy * 2, hz * 2],
             ))
 
