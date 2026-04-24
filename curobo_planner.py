@@ -297,7 +297,7 @@ class CuroboPlanner:
         if not self._world_cuboids:
             return
 
-        margin = 0.05  # 5cm margin around target for exclusion
+        margin = 0.05  # 5cm margin around target for containment test
         cu_cuboids = []
         skipped_target = 0
         skipped_overlap = 0
@@ -306,10 +306,19 @@ class CuroboPlanner:
             cx, cy, cz = c["center"]
             hx, hy, hz = c["half_size"]
 
-            # Skip cuboids near the target (arm needs to reach through them)
+            # Only exclude cuboids that ACTUALLY CONTAIN the target (with small
+            # margin). Previously this used a 50cm XY distance-to-center check
+            # which also excluded the counter — allowing the arm to penetrate
+            # the counter surface. Containment-only keeps counters, walls, etc.
+            # in the collision world while still permitting reach-into-cabinet
+            # semantics (where target is genuinely inside the cabinet cuboid).
             tx, ty, tz = target_pos
-            dist_to_target = np.sqrt((cx - tx)**2 + (cy - ty)**2)
-            if dist_to_target < 0.5:  # 50cm radius around target
+            target_inside = (
+                abs(cx - tx) < hx + margin and
+                abs(cy - ty) < hy + margin and
+                abs(cz - tz) < hz + margin
+            )
+            if target_inside:
                 skipped_target += 1
                 continue
 
