@@ -114,16 +114,32 @@ collision_spheres:
     radius: 0.002
   - center: [-0.017130830505931748, 0.002565189031608204, 0.08936149108295724]
     radius: 0.002
+  - center: [0.0389, -0.0389, 0.085]
+    radius: 0.03
+  - center: [-0.0389, 0.0389, 0.085]
+    radius: 0.03
+  - center: [0.053, -0.053, 0.12]
+    radius: 0.022
+  - center: [-0.053, 0.053, 0.12]
+    radius: 0.022
+  - center: [0.0247, -0.0247, 0.06]
+    radius: 0.022
+  - center: [-0.0247, 0.0247, 0.06]
+    radius: 0.022
   panda_leftfinger:
-  - center: &id001 [0.0, 0.0, 0.01]
-    radius: 0.005
-  - center: &id002 [0.0, 0.0, -0.01]
-    radius: 0.005
+  - center: &id001 [0.0, 0.0, -0.017]
+    radius: 0.01
+  - center: &id002 [0.0, 0.0, 0.0]
+    radius: 0.01
+  - center: &id003 [0.0, 0.0, 0.017]
+    radius: 0.01
   panda_rightfinger:
   - center: *id001
-    radius: 0.005
+    radius: 0.01
   - center: *id002
-    radius: 0.005
+    radius: 0.01
+  - center: *id003
+    radius: 0.01
   base_link_z:
   - center: [-0.565, -0.262, 0.1]
     radius: 0.1
@@ -246,16 +262,16 @@ collision_spheres:
   - center: [0.169, 0.262, 0.5]
     radius: 0.1
   left_outer_finger:
-  - center: &id003 [0.0, 0.003, 0.01]
+  - center: &id004 [0.0, 0.003, 0.01]
     radius: 0.008
-  - center: &id004 [0.0, 0.003, 0.025]
+  - center: &id005 [0.0, 0.003, 0.025]
     radius: 0.008
-  - center: &id005 [0.0, 0.003, 0.043]
+  - center: &id006 [0.0, 0.003, 0.043]
     radius: 0.008
   right_outer_finger:
-  - center: *id003
-    radius: 0.008
   - center: *id004
     radius: 0.008
   - center: *id005
+    radius: 0.008
+  - center: *id006
     radius: 0.008
