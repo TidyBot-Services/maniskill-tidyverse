@@ -42,7 +42,6 @@ translate_task_info.py
 
 # Local artifacts
 logs/
-scripts/
 *.eval-backup
 
 # Convenience symlink to legacy tidybot_uni location
