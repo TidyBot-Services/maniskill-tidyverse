@@ -21,3 +21,29 @@ tidybot_uni/
 # via the bare franka_description pattern above).
 !curobo_assets/robot/franka_description/
 !curobo_assets/robot/franka_description/*.urdf
+
+# Local exploration / debug scripts (transient experiments, not part of the
+# repo's stable surface). If a script becomes a real tool, move it to a proper
+# location and add it explicitly.
+check_*.py
+debug_*.py
+shoot_*.py
+reshoot_*.py
+run_*_viz.py
+run_pnp_task.py
+test_*.py
+save_*.py
+update_*.py
+gen_*.py
+organize_*.py
+visualize_*.py
+sapien_fixture_patches.py
+translate_task_info.py
+
+# Local artifacts
+logs/
+scripts/
+*.eval-backup
+
+# Convenience symlink to legacy tidybot_uni location
+/robocasa_tasks
